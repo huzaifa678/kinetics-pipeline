@@ -5,10 +5,12 @@ module "eks" {
   cluster_name    = var.name
   cluster_version = var.kubernetes_version
 
-  cluster_endpoint_public_access = true
+  cluster_endpoint_public_access = false
 
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
+
+  enable_cluster_creator_admin_permissions = true
 
   enable_irsa = true
 
@@ -34,6 +36,11 @@ module "eks" {
       min_size     = 1
       max_size     = max(var.system_node_desired_size + 1, 3)
       desired_size = var.system_node_desired_size
+
+       launch_template = {
+        id      = aws_launch_template.system.id
+        version = aws_launch_template.system.latest_version
+      }
 
       labels = {
         role = "system"
