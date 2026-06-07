@@ -1,0 +1,21 @@
+# Terraform
+**/.terraform/
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.dev
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+.terraformrc
+terraform.rc
+
+# Lambda build artifacts
+**/lambda/*.zip
+
+# Local
+.DS_Store
+*.log
+docs/architecture.py
