@@ -28,6 +28,18 @@ variable "system_node_desired_size" {
   type        = number
 }
 
+variable "cluster_admin_principal_arns" {
+  description = <<-EOT
+    IAM principal ARNs (roles/users) granted cluster-admin via EKS access
+    entries (AmazonEKSClusterAdminPolicy). Replaces the implicit cluster-creator
+    admin grant. IMPORTANT: set at least one real admin principal (e.g. your SSO
+    admin role or a break-glass role) — with creator-admin disabled and this
+    empty, NO ONE will have cluster admin.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "tags" {
   description = "Tags to apply."
   type        = map(string)

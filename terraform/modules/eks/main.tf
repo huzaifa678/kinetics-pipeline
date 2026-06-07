@@ -1,3 +1,5 @@
+data "aws_partition" "current" {}
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.8"
@@ -10,7 +12,22 @@ module "eks" {
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
 
-  enable_cluster_creator_admin_permissions = true
+  authentication_mode                      = "API"
+  enable_cluster_creator_admin_permissions = false
+
+  access_entries = {
+    for idx, arn in var.cluster_admin_principal_arns : "cluster-admin-${idx}" => {
+      principal_arn = arn
+      policy_associations = {
+        cluster_admin = {
+          policy_arn = "arn:${data.aws_partition.current.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = {
+            type = "cluster"
+          }
+        }
+      }
+    }
+  }
 
   enable_irsa = true
 
