@@ -30,7 +30,7 @@ output "hyperpod_gpu_instance_group" {
 
 output "scale_gpus_up_command" {
   description = "Example AWS CLI to scale the GPU group up for a training run."
-  value       = "aws sagemaker update-cluster --cluster-name ${module.hyperpod.cluster_name} --instance-groups '<see README: set InstanceCount>' --region ${var.region}"
+  value       = "aws sagemaker update-cluster --cluster-name ${module.hyperpod.cluster_name} --instance-groups 2 --region ${var.region}"
 }
 
 output "data_bucket" {
