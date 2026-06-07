@@ -19,3 +19,4 @@ terraform.rc
 .DS_Store
 *.log
 docs/architecture.py
+.venv
