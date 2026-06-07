@@ -37,7 +37,7 @@ module "eks" {
       max_size     = max(var.system_node_desired_size + 1, 3)
       desired_size = var.system_node_desired_size
 
-       launch_template = {
+      launch_template = {
         id      = aws_launch_template.system.id
         version = aws_launch_template.system.latest_version
       }

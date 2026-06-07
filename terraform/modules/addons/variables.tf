@@ -47,6 +47,12 @@ variable "argocd_version" {
   default     = "7.7.0"
 }
 
+variable "argocd_apps_version" {
+  description = "argocd-apps Helm chart version (deploys the app-of-apps root Application). Verify against current chart releases."
+  type        = string
+  default     = "2.0.2"
+}
+
 variable "tags" {
   description = "Tags to apply."
   type        = map(string)

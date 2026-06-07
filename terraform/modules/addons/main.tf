@@ -26,35 +26,37 @@ resource "helm_release" "argocd" {
 }
 
 
-resource "kubernetes_manifest" "app_of_apps" {
-  count = var.enable_argocd && var.gitops_repo_url != "" ? 1 : 0
+resource "helm_release" "app_of_apps" {
+  count      = var.enable_argocd && var.gitops_repo_url != "" ? 1 : 0
+  name       = "app-of-apps"
+  namespace  = "argocd"
+  repository = "https://argoproj.github.io/argo-helm"
+  chart      = "argocd-apps"
+  version    = var.argocd_apps_version
 
-  manifest = {
-    apiVersion = "argoproj.io/v1alpha1"
-    kind       = "Application"
-    metadata = {
-      name      = "app-of-apps"
-      namespace = "argocd"
-    }
-    spec = {
-      project = "default"
-      source = {
-        repoURL        = var.gitops_repo_url
-        targetRevision = var.gitops_repo_revision
-        path           = "gitops/apps"
-      }
-      destination = {
-        server    = "https://kubernetes.default.svc"
+  values = [yamlencode({
+    applications = {
+      "app-of-apps" = {
         namespace = "argocd"
-      }
-      syncPolicy = {
-        automated = {
-          prune    = true
-          selfHeal = true
+        project   = "default"
+        source = {
+          repoURL        = var.gitops_repo_url
+          targetRevision = var.gitops_repo_revision
+          path           = "gitops/apps"
+        }
+        destination = {
+          server    = "https://kubernetes.default.svc"
+          namespace = "argocd"
+        }
+        syncPolicy = {
+          automated = {
+            prune    = true
+            selfHeal = true
+          }
         }
       }
     }
-  }
+  })]
 
   depends_on = [
     helm_release.argocd,
