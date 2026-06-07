@@ -35,6 +35,8 @@ module "eks" {
   system_node_instance_type = var.system_node_instance_type
   system_node_desired_size  = var.system_node_desired_size
 
+  cluster_admin_principal_arns = var.cluster_admin_principal_arns
+
   tags = local.common_tags
 }
 

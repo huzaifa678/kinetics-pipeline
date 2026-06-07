@@ -52,6 +52,17 @@ variable "system_node_desired_size" {
   default     = 2
 }
 
+variable "cluster_admin_principal_arns" {
+  description = <<-EOT
+    IAM principal ARNs granted EKS cluster-admin via access entries
+    (AmazonEKSClusterAdminPolicy). The cluster-creator implicit admin grant is
+    disabled, so set at least one admin principal here (e.g. your SSO admin role
+    ARN) or no one will have kubectl admin on the cluster.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 # ---------------------------------------------------------------------------
 # HyperPod GPU training cluster
 # ---------------------------------------------------------------------------
