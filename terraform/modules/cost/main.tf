@@ -55,7 +55,10 @@ resource "aws_budgets_budget" "monthly" {
 # ---------------------------------------------------------------------------
 # Cost anomaly detection scoped to this project's tag.
 # ---------------------------------------------------------------------------
+# Anomaly detection requires at least one subscriber, so it's only created when
+# alert emails are provided (no emails => no anomaly monitor/subscription).
 resource "aws_ce_anomaly_monitor" "this" {
+  count        = length(var.alert_emails) > 0 ? 1 : 0
   name         = "${var.name}-anomaly"
   monitor_type = "CUSTOM"
   monitor_specification = jsonencode({
@@ -68,9 +71,10 @@ resource "aws_ce_anomaly_monitor" "this" {
 }
 
 resource "aws_ce_anomaly_subscription" "this" {
+  count            = length(var.alert_emails) > 0 ? 1 : 0
   name             = "${var.name}-anomaly-sub"
   frequency        = "DAILY"
-  monitor_arn_list = [aws_ce_anomaly_monitor.this.arn]
+  monitor_arn_list = [aws_ce_anomaly_monitor.this[0].arn]
 
   threshold_expression {
     dimension {
