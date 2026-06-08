@@ -26,37 +26,35 @@ resource "helm_release" "argocd" {
 }
 
 
-resource "helm_release" "app_of_apps" {
-  count      = var.enable_argocd && var.gitops_repo_url != "" ? 1 : 0
-  name       = "app-of-apps"
-  namespace  = "argocd"
-  repository = "https://argoproj.github.io/argo-helm"
-  chart      = "argocd-apps"
-  version    = var.argocd_apps_version
+locals {
+  app_of_apps_manifest = templatefile("${path.module}/app-of-apps.yaml.tpl", {
+    app_name         = "app-of-apps"
+    argocd_namespace = "argocd"
+    repo_url         = var.gitops_repo_url
+    repo_revision    = var.gitops_repo_revision
+    repo_path        = "gitops/apps"
+  })
+}
 
-  values = [yamlencode({
-    applications = {
-      "app-of-apps" = {
-        namespace = "argocd"
-        project   = "default"
-        source = {
-          repoURL        = var.gitops_repo_url
-          targetRevision = var.gitops_repo_revision
-          path           = "gitops/apps"
-        }
-        destination = {
-          server    = "https://kubernetes.default.svc"
-          namespace = "argocd"
-        }
-        syncPolicy = {
-          automated = {
-            prune    = true
-            selfHeal = true
-          }
-        }
-      }
+
+resource "terraform_data" "app_of_apps" {
+  count = var.enable_argocd && var.gitops_repo_url != "" ? 1 : 0
+
+  triggers_replace = [local.app_of_apps_manifest, var.cluster_name]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      MANIFEST = local.app_of_apps_manifest
     }
-  })]
+    command = <<-EOT
+      set -euo pipefail
+      KCFG="$(mktemp)"
+      trap 'rm -f "$KCFG"' EXIT
+      aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.region} --kubeconfig "$KCFG" >/dev/null
+      printf '%s' "$MANIFEST" | kubectl --kubeconfig "$KCFG" apply -f -
+    EOT
+  }
 
   depends_on = [
     helm_release.argocd,
