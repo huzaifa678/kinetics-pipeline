@@ -201,7 +201,7 @@ variable "enable_argocd" {
 variable "gitops_repo_url" {
   description = "Git repository URL that ArgoCD watches for application manifests."
   type        = string
-  default     = ""
+  default     = "https://github.com/huzaifa678/Kinetics-Continious-Delivery.git"
 }
 
 variable "gitops_repo_revision" {
