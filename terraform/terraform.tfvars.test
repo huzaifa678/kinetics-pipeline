@@ -1,0 +1,43 @@
+# Minimal EKS + Client VPN end-to-end test.
+# Goal: prove the cluster comes up AND that you can ONLY reach the API by
+# connecting the SAML Client VPN (public endpoint is locked to the NAT EIP).
+#
+# Apply (both targets; module.vpc is pulled in automatically):
+#   terraform apply -target=module.eks -target=module.client_vpn -var-file=terraform.tfvars.test
+# Tear down when done:
+#   terraform destroy -target=module.client_vpn -target=module.eks -var-file=terraform.tfvars.test
+
+region      = "us-east-1"
+project     = "kinetics-pipeline"
+environment = "test" # separate names from dev (cluster: kinetics-pipeline-test)
+
+# --- EKS: smallest workable node group ---
+kubernetes_version = "1.30"
+
+# t3.small is the practical floor: a t3.micro (1 GiB / ~4 pod IPs) can't fit the
+# EKS system add-ons (CoreDNS x2 + EBS-CSI x2) and leaves pods Pending.
+system_node_instance_type = "t3.small"
+# system_node_instance_type = "t3.micro"   # cheapest, but add-ons may not schedule
+
+system_node_desired_size = 2 # 2x t3.small: room for ArgoCD (~7 pods) + system add-ons
+
+cluster_admin_principal_arns = [
+  "arn:aws:iam::533267178572:user/terraform",
+]
+
+# Strip everything non-essential.
+enable_hyperpod_operator = false # skip the SageMaker operator add-on
+enable_argocd            = false # ArgoCD pulls in iam/storage/karpenter deps
+gpu_instance_count       = 0
+
+# Lock the public endpoint to the VPC NAT EIP only (no extra CIDRs). The ONLY
+# way kubectl works is over the VPN -> private endpoint, which is the point of
+# the test. The apply itself doesn't touch the API, so this is safe.
+cluster_endpoint_public_access_cidrs = ["119.157.95.109/32"] # temp: my IP, to kubectl/helm from CLI for the test
+
+# --- AWS Client VPN (SAML / IAM Identity Center) ---
+enable_client_vpn      = true
+vpn_saml_metadata_file = "client-vpn-saml-metadata.xml" # you create + drop this in terraform/
+vpn_client_cidr_block  = "10.100.0.0/22"                # no overlap with vpc_cidr (10.0.0.0/16)
+vpn_split_tunnel       = true                           # only VPC traffic via VPN; private endpoint resolves over it
+vpn_authorize_internet = false                          # private-endpoint path doesn't need internet routing
