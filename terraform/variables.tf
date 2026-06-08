@@ -63,6 +63,71 @@ variable "cluster_admin_principal_arns" {
   default     = []
 }
 
+variable "enable_hyperpod_operator" {
+  description = "Install the SageMaker HyperPod training operator EKS add-on. Set false for a minimal EKS-only test cluster."
+  type        = bool
+  default     = true
+}
+
+variable "cluster_endpoint_public_access_cidrs" {
+  description = <<-EOT
+    EXTRA CIDR blocks allowed to reach the public EKS API endpoint, on top of the
+    VPC NAT gateway EIP (the AWS Client VPN egress) which is added automatically
+    in main.tf. Leave empty to allow ONLY the VPN egress. Add CIDRs here for
+    anything that runs `terraform apply` from outside the VPN, e.g. your CI
+    runner's egress IP (["203.0.113.10/32"]). Network control only; IAM access
+    entries still govern who can authenticate.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+# ---------------------------------------------------------------------------
+# AWS Client VPN (SAML / IAM Identity Center federated auth)
+# ---------------------------------------------------------------------------
+variable "enable_client_vpn" {
+  description = <<-EOT
+    Provision an AWS Client VPN into the VPC. Requires vpn_saml_metadata_file
+    (the metadata XML of the Client VPN app you create in IAM Identity Center).
+    Leave false until that SAML app exists.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "vpn_client_cidr_block" {
+  description = "IPv4 CIDR for VPN clients. Must not overlap the VPC CIDR; min /22."
+  type        = string
+  default     = "10.100.0.0/22"
+}
+
+variable "vpn_saml_metadata_file" {
+  description = <<-EOT
+    Path to the SAML IdP metadata XML for the Client VPN app in IAM Identity
+    Center (relative to the terraform/ dir). Required when enable_client_vpn.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "vpn_self_service_saml_metadata_file" {
+  description = "Optional path to the self-service portal SAML metadata XML. Empty disables the portal."
+  type        = string
+  default     = ""
+}
+
+variable "vpn_split_tunnel" {
+  description = "Split tunnel (true, recommended) vs full tunnel (all client traffic via the VPC NAT)."
+  type        = bool
+  default     = true
+}
+
+variable "vpn_authorize_internet" {
+  description = "Route 0.0.0.0/0 through the VPC NAT for VPN clients (needed only for EKS *public* endpoint access over the VPN)."
+  type        = bool
+  default     = false
+}
+
 # ---------------------------------------------------------------------------
 # HyperPod GPU training cluster
 # ---------------------------------------------------------------------------

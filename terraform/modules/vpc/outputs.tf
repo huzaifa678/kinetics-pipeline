@@ -12,3 +12,8 @@ output "public_subnet_ids" {
   description = "Public subnet IDs."
   value       = module.vpc.public_subnets
 }
+
+output "nat_public_ips" {
+  description = "Elastic IPs of the NAT gateway(s) — the egress IP for AWS Client VPN clients routed through the VPC."
+  value       = module.vpc.nat_public_ips
+}

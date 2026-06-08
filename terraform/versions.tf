@@ -26,6 +26,12 @@ terraform {
       source  = "hashicorp/archive"
       version = ">= 2.4.0"
     }
+    # Self-signed server certificate for the Client VPN endpoint (clients
+    # authenticate via SAML/IAM Identity Center, not mutual certs).
+    tls = {
+      source  = "hashicorp/tls"
+      version = ">= 4.0.0"
+    }
   }
 
   backend "s3" {

@@ -36,6 +36,42 @@ module "eks" {
   system_node_desired_size  = var.system_node_desired_size
 
   cluster_admin_principal_arns = var.cluster_admin_principal_arns
+  enable_hyperpod_operator     = var.enable_hyperpod_operator
+
+  # Lock the public EKS API endpoint to the VPC NAT gateway's Elastic IP — the
+  # egress IP for AWS Client VPN clients routed through this VPC — plus any extra
+  # CIDRs (e.g. CI egress) from var.cluster_endpoint_public_access_cidrs.
+  cluster_endpoint_public_access_cidrs = concat(
+    [for ip in module.vpc.nat_public_ips : "${ip}/32"],
+    var.cluster_endpoint_public_access_cidrs,
+  )
+
+  # Allow on-VPN clients to reach the private API endpoint on 443.
+  vpn_client_cidr_block = var.enable_client_vpn ? var.vpn_client_cidr_block : ""
+
+  tags = local.common_tags
+}
+
+# ---------------------------------------------------------------------------
+# AWS Client VPN — SAML federated auth via IAM Identity Center. Associated to
+# the private subnets so client egress is the NAT EIP and the EKS private
+# endpoint is reachable. Disabled until enable_client_vpn + SAML metadata set.
+# ---------------------------------------------------------------------------
+module "client_vpn" {
+  source = "./modules/client_vpn"
+  count  = var.enable_client_vpn ? 1 : 0
+
+  name              = local.name
+  vpc_id            = module.vpc.vpc_id
+  vpc_cidr          = var.vpc_cidr
+  subnet_ids        = module.vpc.private_subnet_ids
+  client_cidr_block = var.vpn_client_cidr_block
+
+  saml_metadata_document              = file("${path.module}/${var.vpn_saml_metadata_file}")
+  self_service_saml_metadata_document = var.vpn_self_service_saml_metadata_file == "" ? "" : file("${path.module}/${var.vpn_self_service_saml_metadata_file}")
+
+  split_tunnel       = var.vpn_split_tunnel
+  authorize_internet = var.vpn_authorize_internet
 
   tags = local.common_tags
 }

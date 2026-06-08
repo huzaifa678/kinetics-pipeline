@@ -40,6 +40,33 @@ variable "cluster_admin_principal_arns" {
   default     = []
 }
 
+variable "cluster_endpoint_public_access_cidrs" {
+  description = <<-EOT
+    CIDR blocks allowed to reach the public EKS API endpoint. The root passes the
+    VPC NAT gateway EIP (AWS Client VPN egress) here plus any extra CIDRs. This is
+    a NETWORK control only — authn/authz is still handled by IAM access entries
+    (see cluster_admin_principal_arns). Must be non-empty.
+  EOT
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "enable_hyperpod_operator" {
+  description = "Install the SageMaker HyperPod training operator EKS add-on. Turn off for a minimal/test EKS-only cluster."
+  type        = bool
+  default     = true
+}
+
+variable "vpn_client_cidr_block" {
+  description = <<-EOT
+    Client VPN client CIDR allowed to reach the cluster API server SG on 443
+    (so on-VPN kubectl/Terraform reach the private endpoint). Empty disables the
+    rule.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Tags to apply."
   type        = map(string)

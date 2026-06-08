@@ -47,3 +47,13 @@ output "monthly_budget_usd" {
   description = "Configured monthly budget ceiling."
   value       = var.monthly_budget_usd
 }
+
+output "client_vpn_endpoint_id" {
+  description = "Client VPN endpoint ID (null when disabled)."
+  value       = var.enable_client_vpn ? module.client_vpn[0].endpoint_id : null
+}
+
+output "client_vpn_self_service_url" {
+  description = "Self-service portal URL to download the VPN client config (null unless configured)."
+  value       = var.enable_client_vpn ? module.client_vpn[0].self_service_portal_url : null
+}
