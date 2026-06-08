@@ -32,7 +32,7 @@ locals {
     argocd_namespace = "argocd"
     repo_url         = var.gitops_repo_url
     repo_revision    = var.gitops_repo_revision
-    repo_path        = "gitops/apps"
+    repo_path        = "gitops/bootstrap"
   })
 }
 
