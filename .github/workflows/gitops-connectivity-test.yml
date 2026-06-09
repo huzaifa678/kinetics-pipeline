@@ -1,0 +1,58 @@
+name: gitops-connectivity-test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read # cross-repo write uses the App token below, not GITHUB_TOKEN
+
+jobs:
+  verify-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint GitHub App token for the GitOps repo
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GITOPS_APP_ID }}
+          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ vars.GITOPS_REPO_NAME }}
+
+      - name: Show granted installation permissions
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          echo "Token minted for ${{ github.repository_owner }}/${{ vars.GITOPS_REPO_NAME }}"
+          gh api "/repos/${{ github.repository_owner }}/${{ vars.GITOPS_REPO_NAME }}/installation" \
+            --jq '{app: .app_slug, repo_selection: .repository_selection, contents: .permissions.contents}' \
+            >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ vars.GITOPS_REPO_NAME }}
+          token: ${{ steps.app-token.outputs.token }}
+          path: gitops
+          fetch-depth: 0
+
+      - name: Push + delete a throwaway branch (proves write access)
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          BRANCH="ci/connectivity-test-${GITHUB_RUN_ID}"
+          git config user.name "kinetics-ci[bot]"
+          git config user.email "kinetics-ci[bot]@users.noreply.github.com"
+
+          echo "==> Creating branch $BRANCH with an empty commit"
+          git checkout -b "$BRANCH"
+          git commit --allow-empty -m "ci: connectivity test (run ${GITHUB_RUN_ID})"
+
+          echo "==> Pushing $BRANCH"
+          git push origin "$BRANCH"
+
+          echo "==> Cleaning up: deleting $BRANCH"
+          git push origin --delete "$BRANCH"
+
+          echo "GitOps repo push verified (branch created, pushed, deleted; main untouched)." \
+            | tee -a "$GITHUB_STEP_SUMMARY"
