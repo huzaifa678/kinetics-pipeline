@@ -32,7 +32,7 @@ variable "enable_argocd" {
 variable "gitops_repo_url" {
   description = "Git repo ArgoCD watches."
   type        = string
-  default     = ""
+  default     = "https://github.com/huzaifa678/Kinetics-Continious-Delivery.git"
 }
 
 variable "gitops_repo_revision" {
