@@ -3,6 +3,11 @@ output "hyperpod_execution_role_arn" {
   value       = aws_iam_role.hyperpod_execution.arn
 }
 
+output "hyperpod_execution_role_name" {
+  description = "HyperPod execution role name (for attaching extra policies, e.g. MLflow access)."
+  value       = aws_iam_role.hyperpod_execution.name
+}
+
 output "ack_sagemaker_role_arn" {
   description = "Pod Identity role ARN for the ACK SageMaker controller."
   value       = aws_iam_role.ack_sagemaker.arn
