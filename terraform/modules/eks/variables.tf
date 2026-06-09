@@ -51,6 +51,12 @@ variable "cluster_endpoint_public_access_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "vpc_cidr" {
+  description = "VPC CIDR — allowed to the cluster API SG on 443 for Client VPN clients (which are SNATed to a VPC subnet IP)."
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
 variable "enable_hyperpod_operator" {
   description = "Install the SageMaker HyperPod training operator EKS add-on. Turn off for a minimal/test EKS-only cluster."
   type        = bool

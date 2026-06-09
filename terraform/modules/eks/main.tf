@@ -7,10 +7,6 @@ module "eks" {
   cluster_name    = var.name
   cluster_version = var.kubernetes_version
 
-  # Public endpoint stays on so Terraform's helm/kubernetes providers can reach
-  # the API from wherever apply runs, but access is restricted to an allowlist
-  # (e.g. your VPN/proxy static egress IP). Private access is on by default, so
-  # nodes always talk to the control plane over the private endpoint.
   cluster_endpoint_public_access       = true
   cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
 
@@ -35,14 +31,17 @@ module "eks" {
   }
 
   # Let on-VPN clients reach the cluster API SG (private endpoint) on 443.
+  # AWS Client VPN source-NATs client traffic to its ENI IP in the associated
+  # VPC subnet, so the API server sees a VPC-CIDR source (not the client CIDR) —
+  # the rule must allow the VPC CIDR, not 10.100.0.0/22.
   cluster_security_group_additional_rules = var.vpn_client_cidr_block == "" ? {} : {
     vpn_https = {
-      description = "Client VPN users to API server on 443"
+      description = "Client VPN users (SNATed to VPC) to API server on 443"
       protocol    = "tcp"
       from_port   = 443
       to_port     = 443
       type        = "ingress"
-      cidr_blocks = [var.vpn_client_cidr_block]
+      cidr_blocks = [var.vpc_cidr]
     }
   }
 
