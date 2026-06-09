@@ -30,6 +30,7 @@ module "eks" {
   name               = local.name
   kubernetes_version = var.kubernetes_version
   vpc_id             = module.vpc.vpc_id
+  vpc_cidr           = var.vpc_cidr
   private_subnet_ids = module.vpc.private_subnet_ids
 
   system_node_instance_type = var.system_node_instance_type
@@ -72,6 +73,11 @@ module "client_vpn" {
 
   split_tunnel       = var.vpn_split_tunnel
   authorize_internet = var.vpn_authorize_internet
+
+  # Assign Identity Center users/groups to the SAML app (so VPN auth works).
+  saml_application_arn                = var.vpn_saml_application_arn
+  saml_assignment_user_names          = var.vpn_saml_assignment_user_names
+  saml_assignment_group_display_names = var.vpn_saml_assignment_group_display_names
 
   tags = local.common_tags
 }
@@ -132,6 +138,26 @@ module "hyperpod" {
   gpu_instance_type    = var.gpu_instance_type
   gpu_instance_count   = var.gpu_instance_count
   gpu_threads_per_core = var.gpu_threads_per_core
+
+  tags = local.common_tags
+}
+
+# ---------------------------------------------------------------------------
+# Experiment tracking: SageMaker-managed MLflow tracking server + artifact
+# bucket. The trainer logs params/metrics/artifacts here (--mlflow-tracking-uri
+# = the server ARN). Grants the HyperPod exec role MLflow log access.
+# COST: the server bills hourly while running — toggle enable_mlflow off (or
+# terraform destroy -target module.mlflow) between experiment campaigns.
+# ---------------------------------------------------------------------------
+module "mlflow" {
+  source = "./modules/mlflow"
+  count  = var.enable_mlflow ? 1 : 0
+
+  name                         = local.name
+  trainer_role_name            = module.iam.hyperpod_execution_role_name
+  tracking_server_size         = var.mlflow_tracking_server_size
+  mlflow_version               = var.mlflow_version
+  automatic_model_registration = var.mlflow_automatic_model_registration
 
   tags = local.common_tags
 }

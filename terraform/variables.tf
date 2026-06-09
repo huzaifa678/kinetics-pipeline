@@ -116,6 +116,24 @@ variable "vpn_self_service_saml_metadata_file" {
   default     = ""
 }
 
+variable "vpn_saml_application_arn" {
+  description = "IAM Identity Center custom SAML app ARN for the Client VPN. When set, the users/groups below are assigned to it (replaces manual assignment)."
+  type        = string
+  default     = ""
+}
+
+variable "vpn_saml_assignment_user_names" {
+  description = "Identity Center usernames to assign to the Client VPN SAML app."
+  type        = list(string)
+  default     = []
+}
+
+variable "vpn_saml_assignment_group_display_names" {
+  description = "Identity Center group display names to assign to the Client VPN SAML app."
+  type        = list(string)
+  default     = []
+}
+
 variable "vpn_split_tunnel" {
   description = "Split tunnel (true, recommended) vs full tunnel (all client traffic via the VPC NAT)."
   type        = bool
@@ -187,6 +205,37 @@ variable "checkpoint_retention_days" {
   description = "Days before old checkpoints transition to S3 Infrequent Access, then expire."
   type        = number
   default     = 30
+}
+
+# ---------------------------------------------------------------------------
+# Experiment tracking (SageMaker-managed MLflow)
+# ---------------------------------------------------------------------------
+variable "enable_mlflow" {
+  description = <<-EOT
+    Provision a SageMaker-managed MLflow tracking server + artifact bucket for
+    experiment tracking. COST: the server bills hourly while running, so turn
+    this off (or destroy module.mlflow) between experiment campaigns.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "mlflow_tracking_server_size" {
+  description = "MLflow tracking server size: Small | Medium | Large. Small is cheapest."
+  type        = string
+  default     = "Small"
+}
+
+variable "mlflow_version" {
+  description = "MLflow version for the managed tracking server. Verify the version is offered in your region before applying."
+  type        = string
+  default     = "2.16.2"
+}
+
+variable "mlflow_automatic_model_registration" {
+  description = "Auto-register logged models into the SageMaker Model Registry."
+  type        = bool
+  default     = false
 }
 
 # ---------------------------------------------------------------------------
