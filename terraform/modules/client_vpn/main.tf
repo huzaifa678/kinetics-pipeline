@@ -5,6 +5,8 @@ locals {
   dns_servers = length(var.dns_servers) > 0 ? var.dns_servers : [cidrhost(var.vpc_cidr, 2)]
 
   enable_self_service = var.self_service_saml_metadata_document != ""
+
+  server_domain = "server.${var.name}.clientvpn"
 }
 
 
@@ -41,8 +43,10 @@ resource "tls_cert_request" "server" {
   count           = local.generate_server_cert ? 1 : 0
   private_key_pem = tls_private_key.server[0].private_key_pem
 
+  dns_names = [local.server_domain]
+
   subject {
-    common_name  = "${var.name}-client-vpn-server"
+    common_name  = local.server_domain
     organization = var.name
   }
 }
@@ -104,9 +108,7 @@ resource "aws_security_group" "this" {
   }
 }
 
-# ---------------------------------------------------------------------------
-# Optional connection logging.
-# ---------------------------------------------------------------------------
+
 resource "aws_cloudwatch_log_group" "this" {
   count             = var.enable_connection_logging ? 1 : 0
   name              = "/aws/client-vpn/${var.name}"
@@ -114,9 +116,7 @@ resource "aws_cloudwatch_log_group" "this" {
   tags              = var.tags
 }
 
-# ---------------------------------------------------------------------------
-# Client VPN endpoint (federated / SAML auth).
-# ---------------------------------------------------------------------------
+
 resource "aws_ec2_client_vpn_endpoint" "this" {
   description            = "${var.name} Client VPN"
   server_certificate_arn = local.server_cert_arn
@@ -143,9 +143,7 @@ resource "aws_ec2_client_vpn_endpoint" "this" {
   tags = merge(var.tags, { Name = "${var.name}-client-vpn" })
 }
 
-# ---------------------------------------------------------------------------
-# Associate with the private subnets (one per AZ for HA).
-# ---------------------------------------------------------------------------
+
 resource "aws_ec2_client_vpn_network_association" "this" {
   count = length(var.subnet_ids)
 
@@ -153,19 +151,14 @@ resource "aws_ec2_client_vpn_network_association" "this" {
   subnet_id              = var.subnet_ids[count.index]
 }
 
-# ---------------------------------------------------------------------------
-# Authorization: allow all SAML-authenticated users to reach the VPC.
-# ---------------------------------------------------------------------------
+
 resource "aws_ec2_client_vpn_authorization_rule" "vpc" {
   client_vpn_endpoint_id = aws_ec2_client_vpn_endpoint.this.id
   target_network_cidr    = var.vpc_cidr
   authorize_all_groups   = true
 }
 
-# ---------------------------------------------------------------------------
-# Optional: route + authorize internet (full egress via the VPC NAT gateway).
-# One route per associated subnet is required.
-# ---------------------------------------------------------------------------
+
 resource "aws_ec2_client_vpn_authorization_rule" "internet" {
   count                  = var.authorize_internet ? 1 : 0
   client_vpn_endpoint_id = aws_ec2_client_vpn_endpoint.this.id
@@ -181,4 +174,51 @@ resource "aws_ec2_client_vpn_route" "internet" {
   target_vpc_subnet_id   = var.subnet_ids[count.index]
 
   depends_on = [aws_ec2_client_vpn_network_association.this]
+}
+
+
+locals {
+  manage_sso_assignment = var.saml_application_arn != ""
+}
+
+data "aws_ssoadmin_instances" "this" {
+  count = local.manage_sso_assignment ? 1 : 0
+}
+
+data "aws_identitystore_user" "assignees" {
+  for_each          = local.manage_sso_assignment ? toset(var.saml_assignment_user_names) : toset([])
+  identity_store_id = tolist(data.aws_ssoadmin_instances.this[0].identity_store_ids)[0]
+
+  alternate_identifier {
+    unique_attribute {
+      attribute_path  = "UserName"
+      attribute_value = each.value
+    }
+  }
+}
+
+data "aws_identitystore_group" "assignees" {
+  for_each          = local.manage_sso_assignment ? toset(var.saml_assignment_group_display_names) : toset([])
+  identity_store_id = tolist(data.aws_ssoadmin_instances.this[0].identity_store_ids)[0]
+
+  alternate_identifier {
+    unique_attribute {
+      attribute_path  = "DisplayName"
+      attribute_value = each.value
+    }
+  }
+}
+
+resource "aws_ssoadmin_application_assignment" "users" {
+  for_each        = data.aws_identitystore_user.assignees
+  application_arn = var.saml_application_arn
+  principal_id    = each.value.user_id
+  principal_type  = "USER"
+}
+
+resource "aws_ssoadmin_application_assignment" "groups" {
+  for_each        = data.aws_identitystore_group.assignees
+  application_arn = var.saml_application_arn
+  principal_id    = each.value.group_id
+  principal_type  = "GROUP"
 }

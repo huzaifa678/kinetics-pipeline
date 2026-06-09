@@ -48,6 +48,29 @@ variable "self_service_saml_metadata_document" {
   default     = ""
 }
 
+variable "saml_application_arn" {
+  description = <<-EOT
+    IAM Identity Center custom SAML app ARN for the Client VPN (created in the
+    console). When set, the users/groups below are assigned to it in Terraform so
+    they can authenticate to the VPN — replaces the manual
+    `aws sso-admin create-application-assignment` step. Empty disables management.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "saml_assignment_user_names" {
+  description = "Identity Center usernames to assign to the Client VPN SAML app."
+  type        = list(string)
+  default     = []
+}
+
+variable "saml_assignment_group_display_names" {
+  description = "Identity Center group display names to assign to the Client VPN SAML app."
+  type        = list(string)
+  default     = []
+}
+
 variable "server_certificate_arn" {
   description = <<-EOT
     ACM ARN of an existing server certificate. Leave empty to have this module
