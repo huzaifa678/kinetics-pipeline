@@ -48,6 +48,16 @@ output "monthly_budget_usd" {
   value       = var.monthly_budget_usd
 }
 
+output "mlflow_tracking_server_arn" {
+  description = "SageMaker MLflow tracking server ARN. Set as MLFLOW_TRACKING_URI / --mlflow-tracking-uri (null when enable_mlflow=false)."
+  value       = var.enable_mlflow ? module.mlflow[0].tracking_server_arn : null
+}
+
+output "mlflow_artifact_bucket" {
+  description = "S3 bucket backing the MLflow artifact store (null when enable_mlflow=false)."
+  value       = var.enable_mlflow ? module.mlflow[0].artifact_bucket_name : null
+}
+
 output "client_vpn_endpoint_id" {
   description = "Client VPN endpoint ID (null when disabled)."
   value       = var.enable_client_vpn ? module.client_vpn[0].endpoint_id : null
