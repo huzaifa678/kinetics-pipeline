@@ -1,0 +1,34 @@
+name: terraform-lint
+
+# Static linting with TFLint (provider-aware rules + AWS ruleset). Config lives
+# in terraform/.tflint.hcl. No cloud access required.
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform-lint.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  tflint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Init TFLint (download plugins)
+        run: tflint --init
+        env:
+          # Avoids GitHub API rate limits when fetching the AWS ruleset.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run TFLint (recursive over all modules)
+        run: tflint --recursive --format compact

@@ -1,0 +1,56 @@
+name: aws-oidc-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      role:
+        description: "Which OIDC role to assume"
+        type: choice
+        default: apply
+        options:
+          - apply
+          - ecr
+
+permissions:
+  id-token: write # required for OIDC
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select role ARN
+        id: role
+        run: |
+          case "${{ inputs.role }}" in
+            apply) echo "arn=${{ vars.AWS_ROLE_TF_APPLY }}" >> "$GITHUB_OUTPUT" ;;
+            ecr)   echo "arn=${{ vars.AWS_ROLE_ECR_PUSH }}" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.role.outputs.arn }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Who am I (proves OIDC assume-role works)
+        run: |
+          aws sts get-caller-identity | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Terraform
+        if: ${{ inputs.role == 'apply' }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Terraform init + output (proves state access)
+        if: ${{ inputs.role == 'apply' }}
+        run: |
+          terraform init -input=false
+          echo '### terraform output' >> "$GITHUB_STEP_SUMMARY"
+          terraform output | tee -a "$GITHUB_STEP_SUMMARY"
