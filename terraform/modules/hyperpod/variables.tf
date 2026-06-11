@@ -13,6 +13,24 @@ variable "execution_role_arn" {
   type        = string
 }
 
+variable "enable_gpu_autoscaling" {
+  description = <<-EOT
+    Enable HyperPod managed Karpenter autoscaling for the GPU instance groups.
+    When true: the cluster runs in Continuous provisioning mode, GPU groups are
+    created per-AZ at count 0, and Karpenter scales them on pending GPU pods
+    (scale-to-zero). When false: a single fixed-count group sized by
+    gpu_instance_count (the legacy manual / scale-gpus.sh path).
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "autoscaler_role_arn" {
+  description = "Cluster role HyperPod assumes for Karpenter autoscaling (required when enable_gpu_autoscaling = true)."
+  type        = string
+  default     = ""
+}
+
 variable "subnet_ids" {
   description = "Private subnets for HyperPod nodes."
   type        = list(string)
