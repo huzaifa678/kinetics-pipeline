@@ -12,7 +12,7 @@ project     = "kinetics-pipeline"
 environment = "test" # separate names from dev (cluster: kinetics-pipeline-test)
 
 # --- EKS: smallest workable node group ---
-kubernetes_version = "1.30"
+kubernetes_version = "1.34"
 
 # t3.small is the practical floor: a t3.micro (1 GiB / ~4 pod IPs) can't fit the
 # EKS system add-ons (CoreDNS x2 + EBS-CSI x2) and leaves pods Pending.
@@ -27,7 +27,7 @@ cluster_admin_principal_arns = [
 
 # Strip everything non-essential.
 enable_hyperpod_operator = false # skip the SageMaker operator add-on
-enable_argocd            = false # ArgoCD pulls in iam/storage/karpenter deps
+enable_argocd            = true # ArgoCD pulls in iam/storage/karpenter deps
 gpu_instance_count       = 0
 
 # Lock the public endpoint to the VPC NAT EIP only (no extra CIDRs). The ONLY
@@ -41,3 +41,9 @@ vpn_saml_metadata_file = "client-vpn-saml-metadata.xml" # you create + drop this
 vpn_client_cidr_block  = "10.100.0.0/22"                # no overlap with vpc_cidr (10.0.0.0/16)
 vpn_split_tunnel       = true                           # only VPC traffic via VPN; private endpoint resolves over it
 vpn_authorize_internet = false                          # private-endpoint path doesn't need internet routing
+
+# Assign Identity Center users to the SAML app (replaces the manual
+# `aws sso-admin create-application-assignment`). Get the app ARN from the
+# console (IAM Identity Center > Applications) or `aws sso-admin list-applications`.
+vpn_saml_application_arn       = "arn:aws:sso::533267178572:application/ssoins-7223d8444c116ea9/apl-7223f4c6c415e416"
+vpn_saml_assignment_user_names = ["HuzaifaGill"]

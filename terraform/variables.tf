@@ -35,9 +35,9 @@ variable "az_count" {
 # EKS
 # ---------------------------------------------------------------------------
 variable "kubernetes_version" {
-  description = "EKS control-plane Kubernetes version."
+  description = "EKS control-plane Kubernetes version. Keep on a STANDARD-support release ($0.10/hr); extended support (e.g. 1.30 after 2025-07) is $0.60/hr."
   type        = string
-  default     = "1.30"
+  default     = "1.34"
 }
 
 variable "system_node_instance_type" {
@@ -149,6 +149,64 @@ variable "vpn_authorize_internet" {
 # ---------------------------------------------------------------------------
 # HyperPod GPU training cluster
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Container registry + CI/CD (GitHub Actions OIDC)
+# ---------------------------------------------------------------------------
+variable "ecr_repository_name" {
+  description = "ECR repository name for the training image."
+  type        = string
+  default     = "kinetics-training"
+}
+
+variable "enable_github_oidc" {
+  description = "Create the GitHub Actions OIDC provider + CI roles (ECR push, tf plan, tf apply)."
+  type        = bool
+  default     = true
+}
+
+variable "create_github_oidc_provider" {
+  description = "Create the GitHub OIDC provider. Set false if the account already has token.actions.githubusercontent.com (then set github_oidc_provider_arn)."
+  type        = bool
+  default     = true
+}
+
+variable "github_oidc_provider_arn" {
+  description = "Existing GitHub OIDC provider ARN (used when create_github_oidc_provider = false)."
+  type        = string
+  default     = ""
+}
+
+variable "github_owner" {
+  description = "GitHub org/user that owns the infra repo."
+  type        = string
+  default     = "huzaifa678"
+}
+
+variable "github_repo" {
+  description = "GitHub repo name holding this Terraform / the CI workflows."
+  type        = string
+  default     = "kinetics-pipeline"
+}
+
+variable "terraform_state_bucket" {
+  description = "S3 bucket holding the Terraform remote state (granted to the plan role)."
+  type        = string
+  default     = "kinetics-pipeline-bucket-ec371a2a"
+}
+
+variable "enable_gpu_autoscaling" {
+  description = <<-EOT
+    Use HyperPod's managed Karpenter autoscaling for GPU capacity. When true
+    (default), GPU instance groups are created per-AZ at count 0 and Karpenter
+    scales them on pending GPU pods with scale-to-zero — no scale-gpus.sh, and
+    the auto-stop Lambda is disabled (Karpenter handles idle teardown).
+    When false, falls back to the legacy single fixed-count group sized by
+    gpu_instance_count.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "gpu_instance_type" {
   description = "GPU instance type for the HyperPod training instance group (e.g. ml.g5.12xlarge, ml.g6e.12xlarge, ml.p5.48xlarge)."
   type        = string

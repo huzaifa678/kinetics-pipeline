@@ -139,6 +139,9 @@ module "hyperpod" {
   gpu_instance_count   = var.gpu_instance_count
   gpu_threads_per_core = var.gpu_threads_per_core
 
+  enable_gpu_autoscaling = var.enable_gpu_autoscaling
+  autoscaler_role_arn    = module.iam.hyperpod_autoscaler_role_arn
+
   tags = local.common_tags
 }
 
@@ -168,12 +171,15 @@ module "mlflow" {
 module "cost" {
   source = "./modules/cost"
 
-  name                   = local.name
-  project_tag            = var.project
-  region                 = var.region
-  monthly_budget_usd     = var.monthly_budget_usd
-  alert_emails           = var.budget_alert_emails
-  auto_stop_idle_minutes = var.auto_stop_idle_minutes
+  name               = local.name
+  project_tag        = var.project
+  region             = var.region
+  monthly_budget_usd = var.monthly_budget_usd
+  alert_emails       = var.budget_alert_emails
+  # When Karpenter autoscaling is on, Karpenter owns GPU scale-to-zero (via
+  # consolidation). The auto-stop Lambda would call UpdateCluster and fight
+  # Karpenter — possibly killing a live run — so disable it in that mode.
+  auto_stop_idle_minutes = var.enable_gpu_autoscaling ? 0 : var.auto_stop_idle_minutes
   hyperpod_cluster_name  = module.hyperpod.cluster_name
   gpu_instance_group     = module.hyperpod.gpu_instance_group_name
 
@@ -201,4 +207,34 @@ module "addons" {
   tags = local.common_tags
 
   depends_on = [module.eks]
+}
+
+# ---------------------------------------------------------------------------
+# Container registry for the training image. CI builds with buildx (linux/amd64)
+# and pushes here; the GitOps repo's image tag is then bumped to the new SHA.
+# ---------------------------------------------------------------------------
+module "ecr" {
+  source = "./modules/ecr"
+
+  repository_name = var.ecr_repository_name
+  tags            = local.common_tags
+}
+
+# ---------------------------------------------------------------------------
+# CI/CD identity: GitHub Actions OIDC provider + least-privilege roles (ECR
+# push, Terraform plan, Terraform apply). Keyless — no static AWS access keys.
+# ---------------------------------------------------------------------------
+module "cicd" {
+  source = "./modules/cicd"
+  count  = var.enable_github_oidc ? 1 : 0
+
+  name                 = local.name
+  github_owner         = var.github_owner
+  github_repo          = var.github_repo
+  create_oidc_provider = var.create_github_oidc_provider
+  oidc_provider_arn    = var.github_oidc_provider_arn
+  ecr_repository_arn   = module.ecr.repository_arn
+  state_bucket         = var.terraform_state_bucket
+
+  tags = local.common_tags
 }
