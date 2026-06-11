@@ -8,6 +8,11 @@ output "hyperpod_execution_role_name" {
   value       = aws_iam_role.hyperpod_execution.name
 }
 
+output "hyperpod_autoscaler_role_arn" {
+  description = "Cluster role assumed by HyperPod for Karpenter-based node autoscaling."
+  value       = aws_iam_role.hyperpod_autoscaler.arn
+}
+
 output "ack_sagemaker_role_arn" {
   description = "Pod Identity role ARN for the ACK SageMaker controller."
   value       = aws_iam_role.ack_sagemaker.arn

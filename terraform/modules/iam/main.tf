@@ -88,6 +88,76 @@ resource "aws_iam_role_policy_attachment" "hyperpod_managed" {
 }
 
 # ===========================================================================
+# HyperPod autoscaler (Karpenter) cluster role. Assumed by the HyperPod service
+# (hyperpod.sagemaker.amazonaws.com), not a pod — it lets HyperPod's managed
+# Karpenter add/remove cluster nodes on demand. Passed to the cluster as
+# cluster_role when enable_gpu_autoscaling = true. No AWS managed policy covers
+# these actions, so the permissions are inline (mirrors the AWS docs policy).
+# ===========================================================================
+data "aws_iam_policy_document" "hyperpod_autoscaler_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["hyperpod.sagemaker.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "hyperpod_autoscaler" {
+  name               = "${var.name}-hyperpod-autoscaler"
+  assume_role_policy = data.aws_iam_policy_document.hyperpod_autoscaler_assume.json
+  tags               = var.tags
+}
+
+data "aws_iam_policy_document" "hyperpod_autoscaler" {
+  statement {
+    sid       = "ManageClusterNodes"
+    effect    = "Allow"
+    actions   = ["sagemaker:BatchAddClusterNodes", "sagemaker:BatchDeleteClusterNodes"]
+    resources = ["arn:${local.partition}:sagemaker:*:*:cluster/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceAccount"
+      # Literal IAM policy variable — only acts on clusters in the caller account.
+      values = ["$${aws:PrincipalAccount}"]
+    }
+  }
+
+  statement {
+    sid       = "KmsGrantsForClusterVolumes"
+    effect    = "Allow"
+    actions   = ["kms:CreateGrant", "kms:DescribeKey"]
+    resources = ["arn:${local.partition}:kms:*:*:key/*"]
+    condition {
+      test     = "StringLike"
+      variable = "kms:ViaService"
+      values   = ["sagemaker.*.amazonaws.com"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "kms:GrantIsForAWSResource"
+      values   = ["true"]
+    }
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "kms:GrantOperations"
+      values = [
+        "CreateGrant", "Decrypt", "DescribeKey",
+        "GenerateDataKeyWithoutPlaintext", "ReEncryptTo",
+        "ReEncryptFrom", "RetireGrant",
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "hyperpod_autoscaler" {
+  name   = "${var.name}-hyperpod-autoscaler"
+  role   = aws_iam_role.hyperpod_autoscaler.id
+  policy = data.aws_iam_policy_document.hyperpod_autoscaler.json
+}
+
+# ===========================================================================
 # ACK SageMaker controller role (Pod Identity).
 # ===========================================================================
 resource "aws_iam_role" "ack_sagemaker" {
