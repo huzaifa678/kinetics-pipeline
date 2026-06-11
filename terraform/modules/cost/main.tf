@@ -154,6 +154,44 @@ data "archive_file" "auto_stop" {
   output_path = "${path.module}/lambda/auto_stop.zip"
 }
 
+# ---------------------------------------------------------------------------
+# boto3 layer: the python3.12 runtime ships an older boto3; pin a newer one so
+# HyperPod describe_cluster/update_cluster params resolve. Built at apply time by
+# pip-installing requirements.txt into layer/python/ (Lambda's import path).
+# Requires `pip3` on the machine running `terraform apply`.
+# ---------------------------------------------------------------------------
+resource "null_resource" "boto3_layer_build" {
+  count = var.auto_stop_idle_minutes > 0 ? 1 : 0
+
+  triggers = {
+    requirements = filemd5("${path.module}/lambda/requirements.txt")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      rm -rf "${path.module}/lambda/layer"
+      pip3 install -r "${path.module}/lambda/requirements.txt" \
+        -t "${path.module}/lambda/layer/python" --quiet
+    EOT
+  }
+}
+
+data "archive_file" "boto3_layer" {
+  count       = var.auto_stop_idle_minutes > 0 ? 1 : 0
+  type        = "zip"
+  source_dir  = "${path.module}/lambda/layer"
+  output_path = "${path.module}/lambda/boto3_layer.zip"
+  depends_on  = [null_resource.boto3_layer_build]
+}
+
+resource "aws_lambda_layer_version" "boto3" {
+  count               = var.auto_stop_idle_minutes > 0 ? 1 : 0
+  layer_name          = "${var.name}-boto3"
+  filename            = data.archive_file.boto3_layer[0].output_path
+  source_code_hash    = data.archive_file.boto3_layer[0].output_base64sha256
+  compatible_runtimes = ["python3.12"]
+}
+
 resource "aws_lambda_function" "auto_stop" {
   count            = var.auto_stop_idle_minutes > 0 ? 1 : 0
   function_name    = "${var.name}-auto-stop"
@@ -162,6 +200,7 @@ resource "aws_lambda_function" "auto_stop" {
   handler          = "auto_stop.handler"
   filename         = data.archive_file.auto_stop[0].output_path
   source_code_hash = data.archive_file.auto_stop[0].output_base64sha256
+  layers           = [aws_lambda_layer_version.boto3[0].arn]
   timeout          = 60
 
   environment {

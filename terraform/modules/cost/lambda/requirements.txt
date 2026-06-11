@@ -1,0 +1,5 @@
+# boto3 for the auto-stop Lambda, pinned NEWER than the python3.12 runtime's
+# bundled SDK so HyperPod describe_cluster/update_cluster params are supported.
+# boto3 is pure Python (no native extensions) so it builds cross-platform with a
+# plain `pip install -t` — no manylinux/arch concerns.
+boto3>=1.35.0
