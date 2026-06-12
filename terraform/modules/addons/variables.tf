@@ -29,6 +29,24 @@ variable "enable_argocd" {
   default     = true
 }
 
+variable "enable_hyperpod_operator" {
+  description = "Create the HyperPod training operator EKS add-on (installs cert-manager first as its prerequisite)."
+  type        = bool
+  default     = true
+}
+
+variable "cert_manager_version" {
+  description = "cert-manager Helm chart version (prerequisite of the HyperPod operator add-on)."
+  type        = string
+  default     = "v1.20.2"
+}
+
+variable "hyperpod_cluster_arn" {
+  description = "HyperPod cluster ARN — gates the operator add-on so it isn't created until the cluster (its system node) exists. Empty when the operator is disabled."
+  type        = string
+  default     = ""
+}
+
 variable "gitops_repo_url" {
   description = "Git repo ArgoCD watches."
   type        = string
