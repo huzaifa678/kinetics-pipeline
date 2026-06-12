@@ -114,6 +114,7 @@ module "storage" {
   name                      = local.name
   private_subnet_id         = module.vpc.private_subnet_ids[0]
   vpc_id                    = module.vpc.vpc_id
+  vpc_cidr                  = var.vpc_cidr
   fsx_storage_capacity_gb   = var.fsx_storage_capacity_gb
   checkpoint_retention_days = var.checkpoint_retention_days
 
@@ -135,9 +136,10 @@ module "hyperpod" {
   lifecycle_bucket     = module.storage.lifecycle_bucket_name
   lifecycle_bucket_arn = module.storage.lifecycle_bucket_arn
 
-  gpu_instance_type    = var.gpu_instance_type
-  gpu_instance_count   = var.gpu_instance_count
-  gpu_threads_per_core = var.gpu_threads_per_core
+  gpu_instance_type     = var.gpu_instance_type
+  gpu_instance_count    = var.gpu_instance_count
+  gpu_threads_per_core  = var.gpu_threads_per_core
+  system_instance_count = var.hyperpod_system_instance_count
 
   enable_gpu_autoscaling = var.enable_gpu_autoscaling
   autoscaler_role_arn    = module.iam.hyperpod_autoscaler_role_arn
@@ -200,7 +202,12 @@ module "addons" {
   ack_sagemaker_role_arn = module.iam.ack_sagemaker_role_arn
   karpenter_role_arn     = module.iam.karpenter_role_arn
 
-  enable_argocd        = var.enable_argocd
+  enable_argocd            = var.enable_argocd
+  enable_hyperpod_operator = var.enable_hyperpod_operator
+  # Operator add-on's controller can only run on a HyperPod node, so it must wait
+  # for the HyperPod cluster (its system group) — passing the ARN creates that
+  # edge without blocking ArgoCD/cert-manager.
+  hyperpod_cluster_arn = module.hyperpod.cluster_arn
   gitops_repo_url      = var.gitops_repo_url
   gitops_repo_revision = var.gitops_repo_revision
 
