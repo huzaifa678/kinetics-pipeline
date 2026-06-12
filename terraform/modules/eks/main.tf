@@ -47,20 +47,13 @@ module "eks" {
 
   enable_irsa = true
 
-  cluster_addons = merge(
-    {
-      coredns                = {}
-      kube-proxy             = {}
-      vpc-cni                = {}
-      eks-pod-identity-agent = {}
-      aws-ebs-csi-driver     = {}
-    },
-    var.enable_hyperpod_operator ? {
-      amazon-sagemaker-hyperpod-training-operator = {
-        most_recent = true
-      }
-    } : {},
-  )
+  cluster_addons = {
+    coredns                = {}
+    kube-proxy             = {}
+    vpc-cni                = {}
+    eks-pod-identity-agent = {}
+    aws-ebs-csi-driver     = {}
+  }
 
   # Small, always-on CPU node group for controllers (ACK, Karpenter,
   # ArgoCD, Prometheus). GPUs are NOT here — they're in HyperPod.
