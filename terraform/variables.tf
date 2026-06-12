@@ -223,6 +223,18 @@ variable "gpu_instance_count" {
   default     = 0
 }
 
+variable "hyperpod_system_instance_count" {
+  description = <<-EOT
+    Count for the always-on NON-GPU HyperPod system instance group that hosts the
+    training-operator controller. 1 = operator can run; 0 = no system node (cluster
+    creates with 0 instances). Requires the "Total number of instances allowed
+    across SageMaker HyperPod clusters" quota (L-3308CCC7) >= this; that quota is 0
+    by default, so keep this 0 until the increase is granted.
+  EOT
+  type        = number
+  default     = 1
+}
+
 variable "gpu_threads_per_core" {
   description = "Threads per core for GPU nodes. Set to 1 to disable hyperthreading for training workloads."
   type        = number
@@ -285,9 +297,9 @@ variable "mlflow_tracking_server_size" {
 }
 
 variable "mlflow_version" {
-  description = "MLflow version for the managed tracking server. Verify the version is offered in your region before applying."
+  description = "MLflow version for the managed tracking server. Empty = let SageMaker pick the latest supported version (recommended)."
   type        = string
-  default     = "2.16.2"
+  default     = ""
 }
 
 variable "mlflow_automatic_model_registration" {
