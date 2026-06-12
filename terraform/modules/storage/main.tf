@@ -33,11 +33,7 @@ resource "aws_s3_bucket_public_access_block" "data" {
   restrict_public_buckets = true
 }
 
-# ---------------------------------------------------------------------------
-# Checkpoint bucket. COST CONTROL: lifecycle transitions old checkpoints to
-# Infrequent Access, then expires them, so Spot-interrupt checkpoints don't
-# pile up forever.
-# ---------------------------------------------------------------------------
+
 resource "aws_s3_bucket" "checkpoints" {
   bucket = "${var.name}-checkpoints-${local.suffix}"
   tags   = var.tags
@@ -61,9 +57,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "checkpoints" {
     # Empty filter = apply to all objects in the bucket.
     filter {}
 
-    transition {
-      days          = max(var.checkpoint_retention_days - 15, 1)
-      storage_class = "STANDARD_IA"
+    # STANDARD_IA has a hard 30-day minimum transition. Only transition when
+    # retention is comfortably above that; otherwise objects just expire.
+    dynamic "transition" {
+      for_each = var.checkpoint_retention_days > 30 ? [1] : []
+      content {
+        days          = 30
+        storage_class = "STANDARD_IA"
+      }
     }
 
     expiration {
@@ -92,14 +93,31 @@ resource "aws_s3_bucket_public_access_block" "lifecycle" {
   restrict_public_buckets = true
 }
 
-# ---------------------------------------------------------------------------
-# FSx for Lustre, linked to the dataset bucket. Fast parallel reads for video
-# decoding so GPUs aren't starved. COST CONTROL: SCRATCH_2 is cheapest;
-# size to working set and destroy when idle (terraform destroy -target).
-# ---------------------------------------------------------------------------
+
+resource "aws_security_group" "fsx" {
+  name        = "${var.name}-fsx"
+  description = "FSx for Lustre LNET (port 988 / 1018-1023)"
+  vpc_id      = var.vpc_id
+  tags        = merge(var.tags, { Name = "${var.name}-fsx" })
+}
+
+resource "aws_vpc_security_group_ingress_rule" "fsx_vpc" {
+  security_group_id = aws_security_group.fsx.id
+  cidr_ipv4         = var.vpc_cidr
+  ip_protocol       = "-1"
+  description       = "Intra-VPC traffic (Lustre LNET 988 + 1018-1023)"
+}
+
+resource "aws_vpc_security_group_egress_rule" "fsx_all" {
+  security_group_id = aws_security_group.fsx.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
 resource "aws_fsx_lustre_file_system" "this" {
   storage_capacity            = var.fsx_storage_capacity_gb
   subnet_ids                  = [var.private_subnet_id]
+  security_group_ids          = [aws_security_group.fsx.id]
   deployment_type             = "SCRATCH_2"
   per_unit_storage_throughput = null
 

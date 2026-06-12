@@ -8,6 +8,11 @@ variable "vpc_id" {
   type        = string
 }
 
+variable "vpc_cidr" {
+  description = "VPC CIDR — used by the FSx Lustre security group (port 988)."
+  type        = string
+}
+
 variable "private_subnet_id" {
   description = "Subnet for the FSx file system (keep same AZ as GPU nodes)."
   type        = string
