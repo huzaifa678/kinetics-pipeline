@@ -10,9 +10,9 @@ variable "tracking_server_size" {
 }
 
 variable "mlflow_version" {
-  description = "MLflow version for the managed tracking server. Verify supported versions in your region before applying."
+  description = "MLflow version for the managed tracking server. Empty = let SageMaker pick the latest supported version (recommended)."
   type        = string
-  default     = "2.16.2"
+  default     = ""
 }
 
 variable "automatic_model_registration" {

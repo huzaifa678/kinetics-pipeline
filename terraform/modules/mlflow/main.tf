@@ -80,11 +80,11 @@ resource "aws_iam_role_policy" "tracking_server" {
 
 
 resource "aws_sagemaker_mlflow_tracking_server" "this" {
-  tracking_server_name         = "${var.name}-mlflow"
-  artifact_store_uri           = "s3://${aws_s3_bucket.artifacts.bucket}/mlflow"
-  role_arn                     = aws_iam_role.tracking_server.arn
-  tracking_server_size         = var.tracking_server_size
-  mlflow_version               = var.mlflow_version
+  tracking_server_name = "${var.name}-mlflow"
+  artifact_store_uri   = "s3://${aws_s3_bucket.artifacts.bucket}/mlflow"
+  role_arn             = aws_iam_role.tracking_server.arn
+  tracking_server_size = var.tracking_server_size
+  mlflow_version               = var.mlflow_version != "" ? var.mlflow_version : null
   automatic_model_registration = var.automatic_model_registration
 
   tags = var.tags
