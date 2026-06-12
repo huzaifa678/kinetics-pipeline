@@ -56,6 +56,18 @@ variable "gpu_instance_type" {
   type        = string
 }
 
+variable "system_instance_type" {
+  description = "Instance type for the always-on NON-GPU HyperPod system group (hosts the training-operator controller). Must be a HyperPod ml.* type the account has 'for cluster usage' quota for (default ml.m5.xlarge — many accounts have ml.m5/ml.t3 quota by default but 0 for ml.c5/ml.g5)."
+  type        = string
+  default     = "ml.m5.xlarge"
+}
+
+variable "system_instance_count" {
+  description = "Count for the HyperPod system instance group. 1 = give the operator controller a real HyperPod node; 0 = disable (operator stays DEGRADED until a GPU node exists)."
+  type        = number
+  default     = 1
+}
+
 variable "gpu_instance_count" {
   description = "Number of GPU nodes (0 = scale-to-zero)."
   type        = number

@@ -74,6 +74,23 @@ data "aws_iam_policy_document" "hyperpod_inline" {
     ]
     resources = ["*"]
   }
+
+  # SageMaker assumes this role to validate the cluster's VPC config at create
+  # time (esp. with override_vpc_config / per-AZ subnet pinning). Without these
+  # describes, CreateCluster fails with "Unable to retrieve subnets".
+  statement {
+    sid    = "VpcDescribeForClusterCreate"
+    effect = "Allow"
+    actions = [
+      "ec2:DescribeSubnets",
+      "ec2:DescribeVpcs",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeDhcpOptions",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DescribeAvailabilityZones",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "hyperpod_inline" {
