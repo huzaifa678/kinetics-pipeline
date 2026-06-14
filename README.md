@@ -361,8 +361,8 @@ no static AWS keys. Workflows in `.github/workflows/`:
 | `terraform-validate` / `-lint` | PR/push to `terraform/**` | fmt+validate, tflint |
 | `terraform-plan` | PR | OIDC→plan role; comments the plan |
 | `terraform-apply` | push to `main` / dispatch | OIDC→apply role; `production` env approval; `-var-file=terraform.tfvars.dev` |
-| `docker-build` | push to `training/**` | buildx amd64 → ECR (`sha-<short>`); then ↓ |
-| `update-gitops` | called by build | App token bumps `image.tag` in the **delivery repo** |
+| `docker-build` | push to `training/**` | buildx amd64 → ECR: **training** (`sha-<short>`) + **inference** (`serve-<short>`); then ↓ |
+| `update-gitops` | called by build (×2) | App token bumps `image.tag` for the training **and** inference charts in the **delivery repo** |
 
 Cross-repo GitOps pushes use a **GitHub App** installation token (not a PAT). Run
 `scripts/setup-github-ci.sh` after `apply` to populate the repo variables/secrets
