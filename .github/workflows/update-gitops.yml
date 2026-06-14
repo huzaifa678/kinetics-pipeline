@@ -4,18 +4,28 @@ on:
   workflow_call:
     inputs:
       image_tag:
-        description: "Image tag to deploy (e.g. sha-abc1234)"
+        description: "Image tag to deploy (e.g. sha-abc1234 or serve-abc1234)"
         required: true
         type: string
+      values_path:
+        description: "Chart values.yaml to bump, relative to the GitOps repo root"
+        required: false
+        type: string
+        default: helm/training-job/values.yaml
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Image tag to deploy (e.g. sha-abc1234)"
+        description: "Image tag to deploy (e.g. sha-abc1234 or serve-abc1234)"
         required: true
         type: string
+      values_path:
+        description: "Chart values.yaml to bump, relative to the GitOps repo root"
+        required: false
+        type: string
+        default: helm/training-job/values.yaml
 
 permissions:
-  contents: read 
+  contents: read
 
 jobs:
   bump:
@@ -42,24 +52,26 @@ jobs:
         env:
           IMAGE_TAG: ${{ inputs.image_tag }}
           IMAGE_REPO: ${{ vars.ECR_REPOSITORY }}
+          VALUES_PATH: ${{ inputs.values_path }}
         run: |
           # ubuntu-latest ships mikefarah yq v4.
-          yq -i '.image.tag = strenv(IMAGE_TAG)' helm/training-job/values.yaml
-          yq -i '.image.repository = strenv(IMAGE_REPO)' helm/training-job/values.yaml
-          echo "Updated image -> ${IMAGE_REPO}:${IMAGE_TAG}"
-          git --no-pager diff -- helm/training-job/values.yaml || true
+          yq -i '.image.tag = strenv(IMAGE_TAG)' "$VALUES_PATH"
+          yq -i '.image.repository = strenv(IMAGE_REPO)' "$VALUES_PATH"
+          echo "Updated ${VALUES_PATH} image -> ${IMAGE_REPO}:${IMAGE_TAG}"
+          git --no-pager diff -- "$VALUES_PATH" || true
 
       - name: Commit & push
         working-directory: gitops
         env:
           IMAGE_TAG: ${{ inputs.image_tag }}
+          VALUES_PATH: ${{ inputs.values_path }}
         run: |
           git config user.name "kinetics-ci[bot]"
           git config user.email "kinetics-ci[bot]@users.noreply.github.com"
-          if git diff --quiet -- helm/training-job/values.yaml; then
-            echo "No change — image already at ${IMAGE_TAG}."
+          if git diff --quiet -- "$VALUES_PATH"; then
+            echo "No change — ${VALUES_PATH} already at ${IMAGE_TAG}."
             exit 0
           fi
-          git add helm/training-job/values.yaml
-          git commit -m "ci: deploy training image ${IMAGE_TAG}"
+          git add "$VALUES_PATH"
+          git commit -m "ci: deploy ${IMAGE_TAG} (${VALUES_PATH})"
           git push
