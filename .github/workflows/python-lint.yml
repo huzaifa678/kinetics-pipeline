@@ -1,0 +1,40 @@
+name: python-lint
+
+# Ruff lint + format check for the training package. Enforces PEP 8/257/484/585/604
+# via the rule sets in training/pyproject.toml ([tool.ruff]). No cloud access.
+on:
+  pull_request:
+    paths:
+      - "training/**"
+      - ".github/workflows/python-lint.yml"
+  push:
+    branches: [main]
+    paths:
+      - "training/**"
+      - ".github/workflows/python-lint.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: training
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Pinned so rule sets stay reproducible (ruff's checks evolve between releases).
+      - name: Install ruff
+        run: pip install ruff==0.15.17
+
+      - name: Ruff lint
+        run: ruff check src tests deploy inference train.py
+
+      - name: Ruff format check
+        run: ruff format --check src tests deploy inference train.py

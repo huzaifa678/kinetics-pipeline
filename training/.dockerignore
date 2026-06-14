@@ -1,0 +1,11 @@
+# Keep the build context (and the wheel) lean and reproducible.
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.venv/
+tests/
+*.egg-info/
+build/
+dist/

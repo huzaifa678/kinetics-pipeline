@@ -1,0 +1,84 @@
+# Packaging for the kinetics_trainer trainer. The Docker image builds this into
+# a wheel (see Dockerfile) and installs it, so the container ships an installed
+# package rather than a loose source tree.
+#
+# torch / torchvision are intentionally NOT dependencies here: they're provided
+# by the CUDA base image (pytorch/pytorch:*). Installing them via pip would pull
+# CPU wheels over the base image. The full dev/deploy set (sagemaker, dvc, ...)
+# lives in requirements.txt; this declares only the trainer runtime deps.
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kinetics-trainer"
+description = "Modular PyTorch CNN-LSTM trainer for Kinetics, distributed on SageMaker HyperPod."
+requires-python = ">=3.10"
+dynamic = ["version"]
+dependencies = [
+    "av>=11.0",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "tqdm>=4.66",
+    "boto3>=1.34",
+    # Experiment tracking — SageMaker-managed MLflow via the sagemaker-mlflow plugin.
+    "mlflow>=2.13",
+    "sagemaker-mlflow>=0.1.0",
+]
+
+# OpenTelemetry tracing is optional at runtime (the trainer no-ops without it),
+# but the training image installs this extra so tracing works once
+# OTEL_EXPORTER_OTLP_ENDPOINT is set. See kinetics_trainer/observability.py.
+[project.optional-dependencies]
+otel = [
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+    "opentelemetry-exporter-otlp-proto-http>=1.25",
+]
+
+[project.scripts]
+kinetics-train = "kinetics_trainer.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "kinetics_trainer.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["kinetics_trainer*"]
+
+# ---------------------------------------------------------------------------
+# Linting / formatting — ruff is both the linter and formatter. The selected
+# rule sets enforce the relevant PEPs:
+#   E/W  -> PEP 8 style              D    -> PEP 257 docstrings
+#   I    -> PEP 8 import ordering    UP   -> PEP 585/604 modern typing/syntax
+#   ANN  -> PEP 484 type annotations N    -> PEP 8 naming
+#   F (pyflakes), B (bugbear), SIM, C4, RUF -> correctness/clarity
+# Run: ruff check src tests  |  ruff format src tests
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["build"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "N", "D", "ANN", "RUF"]
+ignore = [
+    "D100", "D104",  # module/package docstrings not required on every file
+    "D107",          # __init__ docstring optional (class docstring covers it)
+    "D102", "D103", "D105",  # don't mandate docstrings on every method/function/dunder
+    "ANN002", "ANN003",  # *args/**kwargs annotations not required
+    "ANN401",        # allow typing.Any where it's deliberate (e.g. boto3 client)
+    # Domain idioms: `functional as F` and `DistributedDataParallel as DDP` are
+    # universal PyTorch conventions; the naming rules below fight them.
+    "N812", "N817",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: docstrings + annotations are noise; sys.path shim must precede imports.
+"tests/**" = ["D", "ANN", "E402"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
