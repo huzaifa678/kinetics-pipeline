@@ -1,0 +1,31 @@
+# CPU inference image for the FastAPI serving backend (kinetics_trainer.serving).
+#
+# Separate from the CUDA training Dockerfile: inference here is CPU-friendly and a
+# slim base keeps the image small enough for local docker-compose. For GPU
+# inference, swap the base + the torch wheels for a CUDA build.
+FROM python:3.11-slim AS runtime
+
+# ffmpeg: codecs PyAV needs to decode mp4 clips for the /predict video_b64 path.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# CPU torch/torchvision. The training image gets these from its CUDA base and the
+# package declares neither (see pyproject), so install them explicitly here.
+RUN pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch==2.3.1 torchvision==0.18.1
+
+# Install the package + serving extra (fastapi, uvicorn, prometheus-client, pydantic).
+COPY pyproject.toml ./
+COPY src/ ./src/
+RUN pip install --no-cache-dir ".[serving]"
+
+ENV MODEL_DIR=/opt/ml/model \
+    OTEL_SERVICE_NAME=kinetics-inference \
+    PORT=8080
+EXPOSE 8080
+
+# One worker: the model is a per-process singleton loaded once at startup.
+CMD ["sh", "-c", "uvicorn kinetics_trainer.serving.app:app --host 0.0.0.0 --port ${PORT}"]
