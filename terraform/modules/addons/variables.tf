@@ -3,11 +3,6 @@ variable "name" {
   type        = string
 }
 
-variable "region" {
-  description = "AWS region."
-  type        = string
-}
-
 variable "cluster_name" {
   description = "EKS cluster name (target for Pod Identity associations)."
   type        = string
