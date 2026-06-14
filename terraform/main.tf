@@ -196,7 +196,6 @@ module "addons" {
   source = "./modules/addons"
 
   name         = local.name
-  region       = var.region
   cluster_name = module.eks.cluster_name
 
   ack_sagemaker_role_arn = module.iam.ack_sagemaker_role_arn
