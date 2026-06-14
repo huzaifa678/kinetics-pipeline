@@ -1,0 +1,3 @@
+# DVC: ignore cache dirs
+.dvc/cache
+.dvc/tmp
