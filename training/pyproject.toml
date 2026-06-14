@@ -36,6 +36,15 @@ otel = [
     "opentelemetry-exporter-otlp-proto-http>=1.25",
 ]
 
+# FastAPI inference backend (kinetics_trainer.serving). Only the serving image
+# installs this extra; the trainer runtime never imports these.
+serving = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "prometheus-client>=0.20",
+    "pydantic>=2.6",
+]
+
 [project.scripts]
 kinetics-train = "kinetics_trainer.cli:main"
 
