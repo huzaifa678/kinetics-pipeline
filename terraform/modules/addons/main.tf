@@ -26,35 +26,49 @@ resource "helm_release" "argocd" {
 }
 
 
-locals {
-  app_of_apps_manifest = templatefile("${path.module}/app-of-apps.yaml.tpl", {
-    app_name         = "app-of-apps"
-    argocd_namespace = "argocd"
-    repo_url         = var.gitops_repo_url
-    repo_revision    = var.gitops_repo_revision
-    repo_path        = "gitops/bootstrap"
-  })
-}
-
-
-resource "terraform_data" "app_of_apps" {
+# Root app-of-apps Application, deployed declaratively via the argocd-apps Helm
+# chart. This replaces the earlier `terraform_data` + `local-exec` that shelled
+# out to `aws eks update-kubeconfig | kubectl apply`: the helm provider talks to
+# the cluster API directly (same exec-auth as the kubernetes provider), so there
+# is no dependency on the `aws`/`kubectl` CLIs on the apply host, the resource
+# has a real create/update/delete lifecycle (drift detection + clean destroy),
+# and the manifest is rendered/owned by Terraform instead of a fire-and-forget
+# shell command.
+resource "helm_release" "argocd_apps" {
   count = var.enable_argocd && var.gitops_repo_url != "" ? 1 : 0
 
-  triggers_replace = [local.app_of_apps_manifest, var.cluster_name]
+  name       = "argocd-apps"
+  namespace  = "argocd"
+  repository = "https://argoproj.github.io/argo-helm"
+  chart      = "argocd-apps"
+  version    = var.argocd_apps_version
 
-  provisioner "local-exec" {
-    interpreter = ["/bin/bash", "-c"]
-    environment = {
-      MANIFEST = local.app_of_apps_manifest
+  values = [yamlencode({
+    applications = {
+      "app-of-apps" = {
+        namespace  = "argocd"
+        finalizers = ["resources-finalizer.argocd.argoproj.io"]
+        project    = "default"
+        source = {
+          repoURL        = var.gitops_repo_url
+          targetRevision = var.gitops_repo_revision
+          path           = "gitops/bootstrap"
+        }
+        destination = {
+          server    = "https://kubernetes.default.svc"
+          namespace = "argocd"
+        }
+        syncPolicy = {
+          automated   = { prune = true, selfHeal = true }
+          syncOptions = ["CreateNamespace=true", "SkipDryRunOnMissingResource=true"]
+          retry = {
+            limit   = 10
+            backoff = { duration = "15s", maxDuration = "5m", factor = 2 }
+          }
+        }
+      }
     }
-    command = <<-EOT
-      set -euo pipefail
-      KCFG="$(mktemp)"
-      trap 'rm -f "$KCFG"' EXIT
-      aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.region} --kubeconfig "$KCFG" >/dev/null
-      printf '%s' "$MANIFEST" | kubectl --kubeconfig "$KCFG" apply -f -
-    EOT
-  }
+  })]
 
   depends_on = [
     helm_release.argocd,
@@ -79,7 +93,7 @@ resource "helm_release" "cert_manager" {
     value = "true"
   }]
 
-  
+
   wait    = true
   timeout = 600
 }
