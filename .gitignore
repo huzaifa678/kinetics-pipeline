@@ -14,9 +14,21 @@ terraform.rc
 
 # Lambda build artifacts
 **/lambda/*.zip
+**/lambda/layer/
 
 # Local
 .DS_Store
 *.log
 docs/architecture.py
 .venv
+__pycache__/
+*.py[cod]
+.pytest_cache/
+# Training run artifacts
+/tmp/kinetics-output/
+*.pt
+*.pth
+model.tar.gz
+# Python build artifacts
+training/build/
+*.egg-info/
