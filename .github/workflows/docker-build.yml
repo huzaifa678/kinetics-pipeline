@@ -9,20 +9,26 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write 
+  id-token: write
   contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     outputs:
-      image_tag: ${{ steps.meta.outputs.tag }}
+      train_tag: ${{ steps.meta.outputs.train_tag }}
+      serve_tag: ${{ steps.meta.outputs.serve_tag }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute image tag
+      - name: Compute image tags
         id: meta
-        run: echo "tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          short=$(git rev-parse --short HEAD)
+          # Distinct prefixes: training (sha-) and serving (serve-) share the ECR
+          # repo but never collide, so immutable-tag pushes stay safe.
+          echo "train_tag=sha-$short" >> "$GITHUB_OUTPUT"
+          echo "serve_tag=serve-$short" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -36,21 +42,44 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push (linux/amd64)
+      - name: Build and push training image (linux/amd64)
         uses: docker/build-push-action@v6
         with:
           context: training
+          file: training/Dockerfile
           platforms: linux/amd64
           push: true
           # Immutable repo: push only the unique SHA tag (never overwrite latest).
-          tags: ${{ vars.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ vars.ECR_REPOSITORY }}:${{ steps.meta.outputs.train_tag }}
+          cache-from: type=gha,scope=training
+          cache-to: type=gha,mode=max,scope=training
 
-  # Separate, reusable workflow: bump the tag in the GitOps repo and push.
-  bump-gitops:
+      - name: Build and push inference (serving) image (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: training
+          file: training/Dockerfile.serve
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.ECR_REPOSITORY }}:${{ steps.meta.outputs.serve_tag }}
+          cache-from: type=gha,scope=serving
+          cache-to: type=gha,mode=max,scope=serving
+
+  # Bump the training chart's image tag in the GitOps repo.
+  bump-training:
     needs: build
     uses: ./.github/workflows/update-gitops.yml
     with:
-      image_tag: ${{ needs.build.outputs.image_tag }}
+      image_tag: ${{ needs.build.outputs.train_tag }}
+      values_path: helm/training-job/values.yaml
+    secrets: inherit
+
+  # Bump the inference chart's image tag. Runs after bump-training so the two
+  # commits to the same GitOps repo serialize (no concurrent-push race).
+  bump-inference:
+    needs: [build, bump-training]
+    uses: ./.github/workflows/update-gitops.yml
+    with:
+      image_tag: ${{ needs.build.outputs.serve_tag }}
+      values_path: helm/inference-service/values.yaml
     secrets: inherit
