@@ -1,0 +1,3 @@
+enable_client_vpn = false
+
+cluster_endpoint_public_access_cidrs = ["0.0.0.0/32"] 
