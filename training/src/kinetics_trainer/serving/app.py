@@ -36,23 +36,34 @@ from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from ..observability import get_logger, init_tracer
-from ..predictor import Predictor
+from ..predictor import Predictor, PredictorLike
 from . import metrics
+from .remote_predictor import RemotePredictor
 from .schemas import HealthResponse, PredictRequest, PredictResponse
 
 log = get_logger("kinetics_serving")
 
 # Holds the singleton predictor, populated at startup by the lifespan handler.
-_state: dict[str, Predictor | None] = {"predictor": None}
+_state: dict[str, PredictorLike | None] = {"predictor": None}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ANN201 (FastAPI lifespan signature)
-    """Load the model once at startup; release it on shutdown."""
-    model_dir = os.environ.get("MODEL_DIR", "/opt/ml/model")
+    """Load the model once at startup; release it on shutdown.
+
+    Picks the backend from env: if SELDON_ENDPOINT is set, the app runs as an
+    *edge* and delegates the forward-pass to a Seldon model; otherwise it loads
+    the model in-process from MODEL_DIR (unchanged local behaviour).
+    """
     init_tracer(service_name=os.environ.get("OTEL_SERVICE_NAME", "kinetics-inference"))
-    log.info("loading model from %s", model_dir)
-    predictor = Predictor.from_model_dir(model_dir)
+    seldon_endpoint = os.environ.get("SELDON_ENDPOINT", "")
+    if seldon_endpoint:
+        log.info("serving via Seldon endpoint %s", seldon_endpoint)
+        predictor: PredictorLike = RemotePredictor.from_env(seldon_endpoint)
+    else:
+        model_dir = os.environ.get("MODEL_DIR", "/opt/ml/model")
+        log.info("loading model from %s", model_dir)
+        predictor = Predictor.from_model_dir(model_dir)
     _state["predictor"] = predictor
     metrics.MODEL_INFO.labels(
         model=predictor.cfg.get("model", "unknown"),
