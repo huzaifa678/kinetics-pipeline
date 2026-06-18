@@ -82,6 +82,22 @@ class RemotePredictor:
 
     def predict(self, clip: torch.Tensor, top_k: int = 5) -> list[Prediction]:
         """POST the clip to the Seldon model and parse the top-k predictions."""
+        preds, _, _ = self.predict_routed(clip, top_k=top_k)
+        return preds
+
+    def predict_routed(
+        self,
+        clip: torch.Tensor,
+        top_k: int = 5,
+        sticky_route: str | None = None,
+    ) -> tuple[list[Prediction], str, str | None]:
+        """Predict and also report which A/B variant served the request.
+
+        Returns ``(predictions, variant, route)`` where ``variant`` is the model
+        that actually answered (for per-variant metrics) and ``route`` is Seldon's
+        sticky-session token — echo it back via ``sticky_route`` on a follow-up
+        request to pin the caller to the same model.
+        """
         payload = {
             "inputs": [
                 {
@@ -93,8 +109,18 @@ class RemotePredictor:
             ],
             "parameters": {"top_k": int(top_k)},
         }
+        headers = {"Seldon-Model": self._model_name}
+        if sticky_route:
+            headers["x-seldon-route"] = sticky_route
         url = f"{self._endpoint}/v2/models/{self._model_name}/infer"
-        resp = self._client.post(url, json=payload, headers={"Seldon-Model": self._model_name})
+        resp = self._client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
-        body = resp.json()["outputs"][0]["data"][0]
-        return [Prediction(label=p["label"], score=p["score"]) for p in json.loads(body)]
+        data = resp.json()
+        preds = [
+            Prediction(label=p["label"], score=p["score"])
+            for p in json.loads(data["outputs"][0]["data"][0])
+        ]
+        route = resp.headers.get("x-seldon-route")
+        # Which model served: V2 model_name (incl. version), else the route, else the experiment.
+        variant = data.get("model_name") or route or self._model_name
+        return preds, variant, route
