@@ -23,6 +23,43 @@ resource "helm_release" "argocd" {
   repository       = "https://argoproj.github.io/argo-helm"
   chart            = "argo-cd"
   version          = var.argocd_version
+
+  # Custom health assessment for the HyperPodPyTorchJob CRD. ArgoCD ships no
+  # built-in health check for it, so without this the manual-sync training app
+  # sits "Progressing/Unknown" forever and never surfaces Succeeded/Failed. This
+  # maps the operator's Kubeflow-style status.conditions to ArgoCD health, via
+  # the chart's configs.cm (merged into the argocd-cm ConfigMap).
+  values = [yamlencode({
+    configs = {
+      cm = {
+        "resource.customizations.health.sagemaker.amazonaws.com_HyperPodPyTorchJob" = <<-EOT
+          hs = {}
+          if obj.status ~= nil and obj.status.conditions ~= nil then
+            for i, c in ipairs(obj.status.conditions) do
+              if c.type == "Failed" and c.status == "True" then
+                hs.status = "Degraded"
+                hs.message = c.message
+                return hs
+              end
+              if c.type == "Succeeded" and c.status == "True" then
+                hs.status = "Healthy"
+                hs.message = c.message
+                return hs
+              end
+              if c.type == "Running" and c.status == "True" then
+                hs.status = "Progressing"
+                hs.message = c.message
+                return hs
+              end
+            end
+          end
+          hs.status = "Progressing"
+          hs.message = "Waiting for HyperPodPyTorchJob status"
+          return hs
+        EOT
+      }
+    }
+  })]
 }
 
 
