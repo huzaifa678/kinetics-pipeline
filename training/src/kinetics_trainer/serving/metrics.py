@@ -31,16 +31,21 @@ IN_PROGRESS = Gauge(
     "Inference requests currently being served.",
 )
 
+# Labelled by `variant` (the serving model, e.g. champion/challenger) so an A/B
+# experiment's arms can be compared side by side in Grafana. For local/in-process
+# serving the variant is the model name; for the Seldon edge it's the model that
+# actually answered (from the x-seldon-route / model_name in the response).
 CONFIDENCE = Histogram(
     "model_prediction_confidence",
     "Top-1 softmax confidence of served predictions.",
+    ["variant"],
     buckets=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
 )
 
 PREDICTIONS = Counter(
     "model_predictions_total",
     "Predicted top-1 class distribution (label drift signal).",
-    ["label"],
+    ["label", "variant"],
 )
 
 MODEL_INFO = Gauge(
@@ -50,7 +55,7 @@ MODEL_INFO = Gauge(
 )
 
 
-def record_prediction(top1_label: str, top1_score: float) -> None:
-    """Record the model-performance signals for one served prediction."""
-    CONFIDENCE.observe(top1_score)
-    PREDICTIONS.labels(label=top1_label).inc()
+def record_prediction(top1_label: str, top1_score: float, variant: str = "unknown") -> None:
+    """Record the model-performance signals for one served prediction (per variant)."""
+    CONFIDENCE.labels(variant=variant).observe(top1_score)
+    PREDICTIONS.labels(label=top1_label, variant=variant).inc()
