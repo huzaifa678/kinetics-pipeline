@@ -1,11 +1,3 @@
-# Packaging for the kinetics_trainer trainer. The Docker image builds this into
-# a wheel (see Dockerfile) and installs it, so the container ships an installed
-# package rather than a loose source tree.
-#
-# torch / torchvision are intentionally NOT dependencies here: they're provided
-# by the CUDA base image (pytorch/pytorch:*). Installing them via pip would pull
-# CPU wheels over the base image. The full dev/deploy set (sagemaker, dvc, ...)
-# lives in requirements.txt; this declares only the trainer runtime deps.
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -43,6 +35,12 @@ serving = [
     "uvicorn[standard]>=0.29",
     "prometheus-client>=0.20",
     "pydantic>=2.6",
+]
+
+# Seldon Core v2 custom MLServer runtime (kinetics_trainer.serving.seldon_runtime).
+# Only the custom MLServer image (Dockerfile.seldon) installs this extra.
+seldon = [
+    "mlserver>=1.6,<1.7",
 ]
 
 [project.scripts]
