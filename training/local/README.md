@@ -11,10 +11,19 @@ Containers (see [docker-compose.yml](docker-compose.yml)):
 | `prometheus` | http://localhost:9090 | scrapes `inference:8080/metrics` every 5s |
 | `grafana` | http://localhost:3000 | views the metrics (anonymous admin; Prometheus pre-wired) |
 | `otel-collector` | (logs only) | receives the app's spans; `docker compose logs -f otel-collector` to see them |
+| `mlflow` | http://localhost:5000 | local MLflow tracking server — the **trainer** logs here (stand-in for SageMaker-managed MLflow) |
 
-## 1. Get a model artifact
+## 1. Get a model artifact (required — do this FIRST)
 
-The app needs `model.pth` + `model_config.json` + `label_map.json` in `./model`.
+The app loads `model.pth` + `model_config.json` + `label_map.json` from `./model`
+at startup. **If that dir is empty the container exits** with:
+
+```
+FileNotFoundError: ... '/opt/ml/model/model_config.json'
+ERROR:    Application startup failed. Exiting.
+```
+
+So generate (or supply) the artifact *before* `docker compose up`.
 
 **Don't have a trained model?** Generate a random one — enough to exercise the
 whole pipeline (predictions are garbage by design):
@@ -90,6 +99,32 @@ curl -s -X POST localhost:8080/predict -H 'Content-Type: application/json' --dat
   http://localhost:3000.
 - **Traces**: `docker compose -f local/docker-compose.yml logs -f otel-collector`
   — you'll see a `predict` span per request (OTLP works end-to-end).
+
+## MLflow (experiment tracking — the training side)
+
+The `mlflow` container is a local stand-in for the SageMaker-managed MLflow
+tracking server. **Inference doesn't log to it** (MLflow tracks training
+experiments, not per-request inference) — it's here so you can verify the
+*trainer's* MLflow integration locally, end-to-end, the same way prod does.
+
+Point a training run at it via the existing `--mlflow-tracking-uri` flag:
+
+```bash
+cd training
+pip install -e .                     # trainer + mlflow deps
+MLFLOW_TRACKING_URI=http://localhost:5000 \
+  python train.py --model cnn_lstm --backbone resnet18 \
+    --train-manifest /path/train.csv --val-manifest /path/val.csv \
+    --epochs 1 --mlflow-tracking-uri http://localhost:5000 \
+    --experiment-name kinetics-local
+```
+
+Then open http://localhost:5000 — you'll see the run, its params/metrics, and the
+logged `latest.pt` + `label_map.json` artifacts. Runs persist on the `mlflow-data`
+volume across `down` (wiped by `down -v`).
+
+> Wiring the inference service to **load** its model from the MLflow Model
+> Registry (instead of `MODEL_DIR`/S3) is a natural next step — not done here.
 
 ## Teardown
 
