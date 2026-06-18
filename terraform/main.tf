@@ -93,6 +93,27 @@ module "karpenter" {
   tags = local.common_tags
 }
 
+# ---------------------------------------------------------------------------
+# MSK (Kafka) — backend for Seldon Core v2 Pipelines / async dataflow. Off by
+# default (enable_msk); the sync Model + A/B Experiment path needs no Kafka.
+# TLS in transit, unauthenticated, SG-locked to the VPC (see modules/msk).
+# ---------------------------------------------------------------------------
+module "msk" {
+  source = "./modules/msk"
+  count  = var.enable_msk ? 1 : 0
+
+  name               = local.name
+  vpc_id             = module.vpc.vpc_id
+  vpc_cidr           = var.vpc_cidr
+  private_subnet_ids = module.vpc.private_subnet_ids
+
+  kafka_version          = var.kafka_version
+  broker_instance_type   = var.msk_broker_instance_type
+  broker_ebs_volume_size = var.msk_broker_ebs_volume_size
+
+  tags = local.common_tags
+}
+
 module "iam" {
   source = "./modules/iam"
 

@@ -97,3 +97,8 @@ output "client_vpn_self_service_url" {
   description = "Self-service portal URL to download the VPN client config (null unless configured)."
   value       = var.enable_client_vpn ? module.client_vpn[0].self_service_portal_url : null
 }
+
+output "msk_bootstrap_brokers_tls" {
+  description = "MSK TLS bootstrap brokers (null when enable_msk is off). Feed into the CD repo's seldon-core-v2-runtime kafkaConfig.bootstrap."
+  value       = var.enable_msk ? module.msk[0].bootstrap_brokers_tls : null
+}
