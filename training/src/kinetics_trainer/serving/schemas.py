@@ -36,6 +36,9 @@ class PredictResponse(BaseModel):
     """Top-k predictions for one request."""
 
     predictions: list[Prediction]
+    # Which A/B variant served this request (the Seldon model, or the local model
+    # name). Null only if serving reported nothing.
+    model_variant: str | None = None
 
 
 class HealthResponse(BaseModel):
