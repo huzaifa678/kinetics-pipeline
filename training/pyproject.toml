@@ -43,6 +43,8 @@ serving = [
     "uvicorn[standard]>=0.29",
     "prometheus-client>=0.20",
     "pydantic>=2.6",
+    # httpx: the edge calls the Seldon model endpoint (kinetics_trainer.serving.remote_predictor).
+    "httpx>=0.27",
 ]
 
 [project.scripts]
