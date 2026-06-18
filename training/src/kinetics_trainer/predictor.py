@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from typing import Protocol
 
 import torch
 
@@ -31,6 +32,45 @@ class Prediction:
 
     label: str
     score: float
+
+
+class PredictorLike(Protocol):
+    """Structural interface shared by the local Predictor and the edge RemotePredictor.
+
+    Lets the FastAPI app hold either backend behind one type: a local in-process
+    model, or a remote one that delegates the forward-pass to a Seldon endpoint.
+    """
+
+    @property
+    def cfg(self) -> dict: ...
+
+    @property
+    def num_classes(self) -> int: ...
+
+    def preprocess_video_bytes(self, raw: bytes) -> torch.Tensor: ...
+
+    def predict(self, clip: torch.Tensor, top_k: int = 5) -> list[Prediction]: ...
+
+
+def decode_video_bytes(raw: bytes, clip_length: int = 16, frame_size: int = 224) -> torch.Tensor:
+    """Decode raw mp4 bytes into a normalized ``(T, 3, H, W)`` clip tensor.
+
+    Shared by the local :class:`Predictor` and the edge ``RemotePredictor`` so the
+    video-preprocessing path is identical regardless of where the model runs.
+    """
+    import tempfile
+
+    from .data import build_transform, decode_clip
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as fh:
+        fh.write(raw)
+        path = fh.name
+    try:
+        frames = decode_clip(path, clip_length)
+    finally:
+        os.unlink(path)
+    tf = build_transform(frame_size, train=False)
+    return torch.stack([tf(f) for f in frames], dim=0)
 
 
 class Predictor:
@@ -96,21 +136,11 @@ class Predictor:
 
     def preprocess_video_bytes(self, raw: bytes) -> torch.Tensor:
         """Decode raw mp4 bytes into a normalized ``(T, 3, H, W)`` clip tensor."""
-        import tempfile
-
-        from .data import build_transform, decode_clip
-
-        clip_len = int(self._cfg.get("clip_length", 16))
-        frame_size = int(self._cfg.get("frame_size", 224))
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as fh:
-            fh.write(raw)
-            path = fh.name
-        try:
-            frames = decode_clip(path, clip_len)
-        finally:
-            os.unlink(path)
-        tf = build_transform(frame_size, train=False)
-        return torch.stack([tf(f) for f in frames], dim=0)
+        return decode_video_bytes(
+            raw,
+            clip_length=int(self._cfg.get("clip_length", 16)),
+            frame_size=int(self._cfg.get("frame_size", 224)),
+        )
 
     @torch.no_grad()
     def predict(self, clip: torch.Tensor, top_k: int = 5) -> list[Prediction]:
