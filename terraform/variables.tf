@@ -101,6 +101,39 @@ variable "vpn_client_cidr_block" {
   default     = "10.100.0.0/22"
 }
 
+# ---------------------------------------------------------------------------
+# MSK (Kafka) — only needed for Seldon Core v2 Pipelines / async dataflow. The
+# sync Model + A/B Experiment path does not use Kafka, so this defaults off.
+# ---------------------------------------------------------------------------
+variable "enable_msk" {
+  description = <<-EOT
+    Provision an Amazon MSK (Kafka) cluster for Seldon Core v2 Pipelines. Adds
+    ~$0.10-0.13/hr (2x kafka.t3.small) — leave false unless you need Pipelines.
+    When true, feed terraform output msk_bootstrap_brokers_tls into the CD repo's
+    seldon-core-v2-runtime values.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "kafka_version" {
+  description = "Apache Kafka version for the MSK cluster."
+  type        = string
+  default     = "3.6.0"
+}
+
+variable "msk_broker_instance_type" {
+  description = "MSK broker instance type. kafka.t3.small is the dev cost floor."
+  type        = string
+  default     = "kafka.t3.small"
+}
+
+variable "msk_broker_ebs_volume_size" {
+  description = "Per-broker EBS volume size in GiB."
+  type        = number
+  default     = 20
+}
+
 variable "vpn_saml_metadata_file" {
   description = <<-EOT
     Path to the SAML IdP metadata XML for the Client VPN app in IAM Identity
