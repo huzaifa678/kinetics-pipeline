@@ -23,11 +23,17 @@ import kinetics_trainer.serving.remote_predictor as rp
 
 def _seldon_response(request: httpx.Request) -> httpx.Response:
     body = json.loads(request.content)
-    # Echo back the requested top_k worth of predictions in V2 output shape.
+    # Echo back top_k predictions in V2 output shape, plus the serving model +
+    # sticky route like Seldon's router does.
     top_k = body["parameters"]["top_k"]
     preds = [{"label": "dancing", "score": 0.9}, {"label": "running", "score": 0.1}][:top_k]
     return httpx.Response(
-        200, json={"outputs": [{"name": "predictions", "data": [json.dumps(preds)]}]}
+        200,
+        json={
+            "model_name": "kinetics-challenger_1",
+            "outputs": [{"name": "predictions", "data": [json.dumps(preds)]}],
+        },
+        headers={"x-seldon-route": ":kinetics-challenger_1:"},
     )
 
 
@@ -62,6 +68,25 @@ def test_predict_sends_v2_request(predictor):
     assert captured["body"]["inputs"][0]["datatype"] == "FP32"
     assert captured["header"] == "kinetics"
     assert captured["url"].endswith("/v2/models/kinetics/infer")
+
+
+def test_predict_routed_reports_variant_and_route(predictor):
+    preds, variant, route = predictor.predict_routed(torch.zeros((16, 3, 224, 224)), top_k=1)
+    assert preds[0].label == "dancing"
+    assert variant == "kinetics-challenger_1"  # from V2 model_name
+    assert route == ":kinetics-challenger_1:"
+
+
+def test_predict_routed_passes_sticky_route(predictor):
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["sticky"] = request.headers.get("x-seldon-route")
+        return _seldon_response(request)
+
+    predictor._client = httpx.Client(transport=httpx.MockTransport(handler))
+    predictor.predict_routed(torch.zeros((16, 3, 224, 224)), sticky_route=":kinetics-champion_1:")
+    assert captured["sticky"] == ":kinetics-champion_1:"
 
 
 def test_from_env_reads_config(monkeypatch):

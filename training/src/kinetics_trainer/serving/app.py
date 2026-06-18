@@ -31,7 +31,7 @@ import time
 from contextlib import asynccontextmanager
 
 import torch
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
@@ -95,7 +95,7 @@ def prometheus_metrics() -> Response:
 
 
 @app.post("/predict", response_model=PredictResponse)
-def predict(req: PredictRequest) -> PredictResponse:
+def predict(req: PredictRequest, request: Request, response: Response) -> PredictResponse:
     predictor = _state["predictor"]
     if predictor is None:
         raise HTTPException(status_code=503, detail="model not loaded")
@@ -108,11 +108,24 @@ def predict(req: PredictRequest) -> PredictResponse:
             clip = torch.tensor(req.clip, dtype=torch.float32)
         else:
             clip = predictor.preprocess_video_bytes(base64.b64decode(req.video_b64))
-        preds = predictor.predict(clip, top_k=req.top_k)
+        # Capture which A/B variant served the request and support sticky sessions:
+        # pass the caller's x-seldon-route through and echo Seldon's back.
+        if isinstance(predictor, RemotePredictor):
+            preds, variant, route = predictor.predict_routed(
+                clip, top_k=req.top_k, sticky_route=request.headers.get("x-seldon-route")
+            )
+            if route:
+                response.headers["x-seldon-route"] = route
+        else:
+            preds = predictor.predict(clip, top_k=req.top_k)
+            variant = predictor.cfg.get("model", "local")
         if preds:
-            metrics.record_prediction(preds[0].label, preds[0].score)
+            metrics.record_prediction(preds[0].label, preds[0].score, variant)
         metrics.REQUESTS.labels(endpoint=endpoint, status="ok").inc()
-        return PredictResponse(predictions=[{"label": p.label, "score": p.score} for p in preds])
+        return PredictResponse(
+            predictions=[{"label": p.label, "score": p.score} for p in preds],
+            model_variant=variant,
+        )
     except HTTPException:
         metrics.REQUESTS.labels(endpoint=endpoint, status="client_error").inc()
         raise
