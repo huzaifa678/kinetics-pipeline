@@ -57,12 +57,54 @@ class Config:
     output_dir: str
     log_every: int
 
+    @classmethod
+    def for_inference(cls, model_cfg: dict) -> Config:
+        """Rebuild a Config from a saved model_config.json, for model reconstruction.
+
+        Only the architecture fields matter at inference time; everything else gets
+        harmless defaults. ``pretrained`` is forced False — weights come from the
+        saved checkpoint, not a fresh download. Lets ModelFactory rebuild *any*
+        registered model (cnn_lstm / r2plus1d / videomae) from its config alone.
+        """
+        return cls(
+            model=model_cfg["model"],
+            backbone=model_cfg.get("backbone", "resnet50"),
+            pretrained=False,
+            freeze_backbone_epochs=0,
+            num_classes=model_cfg["num_classes"],
+            hidden_size=model_cfg.get("hidden_size", 512),
+            lstm_layers=model_cfg.get("lstm_layers", 2),
+            bidirectional=model_cfg.get("bidirectional", True),
+            clip_length=model_cfg.get("clip_length", 16),
+            frame_size=model_cfg.get("frame_size", 224),
+            train_manifest="",
+            val_manifest="",
+            num_workers=0,
+            batch_size=1,
+            epochs=0,
+            lr=0.0,
+            backbone_lr_mult=1.0,
+            weight_decay=0.0,
+            warmup_epochs=0,
+            amp="no",
+            torch_compile=False,
+            seed=0,
+            mlflow_tracking_uri="",
+            experiment_name="",
+            run_name="",
+            checkpoint_s3="",
+            checkpoint_every_steps=0,
+            resume=False,
+            output_dir="",
+            log_every=0,
+        )
+
 
 def parse_args(argv: list[str] | None = None) -> Config:
     p = argparse.ArgumentParser("kinetics-trainer")
 
     # model
-    p.add_argument("--model", default="cnn_lstm", choices=["cnn_lstm", "r2plus1d"])
+    p.add_argument("--model", default="cnn_lstm", choices=["cnn_lstm", "r2plus1d", "videomae"])
     p.add_argument("--backbone", default="resnet50", choices=["resnet18", "resnet34", "resnet50"])
     p.add_argument("--pretrained", type=str2bool, default=True)
     p.add_argument("--freeze-backbone-epochs", type=int, default=3)

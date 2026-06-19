@@ -45,6 +45,12 @@ seldon = [
     "mlserver>=1.6,<1.7",
 ]
 
+# VideoMAE challenger model (--model videomae). Soft dep, imported lazily in
+# model.py so the trainer/smoke tests don't require it; the training image installs it.
+videomae = [
+    "transformers>=4.40",
+]
+
 [project.scripts]
 kinetics-train = "kinetics_trainer.cli:main"
 

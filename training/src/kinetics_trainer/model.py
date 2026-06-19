@@ -186,6 +186,33 @@ def _build_r2plus1d(cfg: Config) -> nn.Module:
     return _ChannelsTimeAdapter(net)
 
 
+# A heavier transformer challenger for A/B against the CNN-LSTM. Fine-tune from a pretrained checkpoint to keep GPU cost sane
+_VIDEOMAE_CHECKPOINT = "MCG-NJU/videomae-base"
+
+
+@register_model("videomae")
+def _build_videomae(cfg: Config) -> nn.Module:
+    from transformers import VideoMAEForVideoClassification
+
+    if cfg.pretrained:
+        net = VideoMAEForVideoClassification.from_pretrained(
+            _VIDEOMAE_CHECKPOINT,
+            num_labels=cfg.num_classes,
+            ignore_mismatched_sizes=True,
+        )
+    else:
+        from transformers import VideoMAEConfig
+
+        net = VideoMAEForVideoClassification(
+            VideoMAEConfig(
+                image_size=cfg.frame_size,
+                num_frames=cfg.clip_length,
+                num_labels=cfg.num_classes,
+            )
+        )
+    return _VideoMAEAdapter(net)
+
+
 def build_model(cfg: Config) -> nn.Module:
     """Backward-compatible thin wrapper over ModelFactory.create."""
     return ModelFactory.create(cfg)
@@ -205,6 +232,23 @@ class _ChannelsTimeAdapter(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x.permute(0, 2, 1, 3, 4))
+
+
+class _VideoMAEAdapter(nn.Module):
+    """Adapt a HF VideoMAEForVideoClassification to the trainer's tensor contract.
+
+    The dataloader's (B, T, C, H, W) layout already matches VideoMAE's expected
+    ``pixel_values`` shape (no permute needed); this just unwraps the HF
+    ModelOutput so the rest of the pipeline sees a plain (B, num_classes) logits
+    tensor like every other model.
+    """
+
+    def __init__(self, net: nn.Module) -> None:
+        super().__init__()
+        self.net = net
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(pixel_values=x).logits
 
 
 def build_param_groups(model: nn.Module, base_lr: float, backbone_lr_mult: float) -> list[dict]:

@@ -4,6 +4,7 @@ or just `python training/tests/test_smoke.py`."""
 import os
 import sys
 
+import pytest
 import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -31,6 +32,7 @@ from kinetics_trainer.model import (
     build_param_groups,
     model_config,
 )
+from kinetics_trainer.predictor import Predictor
 from kinetics_trainer.tracking import (
     NullTracker,
     Tracker,
@@ -142,8 +144,10 @@ def test_tracker_disabled_is_noop():
 
 
 def test_model_factory_registry():
-    # cnn_lstm + r2plus1d are registered; factory builds without an if/elif chain.
-    assert {"cnn_lstm", "r2plus1d"}.issubset(set(ModelFactory.available()))
+    # cnn_lstm + r2plus1d + videomae are registered; factory builds without an
+    # if/elif chain. (videomae's build needs transformers + weights, so we only
+    # assert registration here, not construction.)
+    assert {"cnn_lstm", "r2plus1d", "videomae"}.issubset(set(ModelFactory.available()))
     cfg = parse_args(
         [
             "--model=cnn_lstm",
@@ -157,6 +161,38 @@ def test_model_factory_registry():
     assert isinstance(ModelFactory.create(cfg), CNNLSTM)
     # build_model is a thin backward-compatible wrapper over the factory
     assert isinstance(build_model(cfg), CNNLSTM)
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 10),
+    reason="Predictor.predict uses zip(strict=) — Python 3.10+ (package targets >=3.10)",
+)
+def test_predictor_rebuilds_via_factory(tmp_path):
+    # End-to-end: save a tiny cnn_lstm artifact, then Predictor.from_model_dir
+    # rebuilds it through ModelFactory (no cnn_lstm hardcoding) and predicts.
+    import json
+
+    cfg = parse_args(
+        [
+            "--model=cnn_lstm",
+            "--backbone=resnet18",
+            "--pretrained=false",
+            "--num-classes=2",
+            "--clip-length=4",
+            "--frame-size=64",
+            "--train-manifest=x",
+            "--val-manifest=y",
+        ]
+    )
+    model = ModelFactory.create(cfg)
+    torch.save(model.state_dict(), tmp_path / "model.pth")
+    (tmp_path / "model_config.json").write_text(json.dumps(model_config(cfg)))
+    (tmp_path / "label_map.json").write_text(json.dumps({"jump": 0, "run": 1}))
+
+    predictor = Predictor.from_model_dir(str(tmp_path))
+    preds = predictor.predict(torch.randn(4, 3, 64, 64), top_k=2)
+    assert {p.label for p in preds} == {"jump", "run"}
+    assert predictor.num_classes == 2
 
 
 def test_model_factory_unknown_raises():
