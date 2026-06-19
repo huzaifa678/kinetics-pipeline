@@ -62,7 +62,7 @@ def parse_args(argv: list[str] | None = None) -> Config:
     p = argparse.ArgumentParser("kinetics-trainer")
 
     # model
-    p.add_argument("--model", default="cnn_lstm", choices=["cnn_lstm", "r2plus1d"])
+    p.add_argument("--model", default="cnn_lstm", choices=["cnn_lstm", "r2plus1d", "videomae"])
     p.add_argument("--backbone", default="resnet50", choices=["resnet18", "resnet34", "resnet50"])
     p.add_argument("--pretrained", type=str2bool, default=True)
     p.add_argument("--freeze-backbone-epochs", type=int, default=3)
