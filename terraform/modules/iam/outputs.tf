@@ -18,6 +18,11 @@ output "ack_sagemaker_role_arn" {
   value       = aws_iam_role.ack_sagemaker.arn
 }
 
+output "image_updater_role_arn" {
+  description = "Pod Identity role ARN for the ArgoCD Image Updater (ECR read)."
+  value       = aws_iam_role.image_updater.arn
+}
+
 output "karpenter_role_arn" {
   description = "Pod Identity role ARN for the Karpenter controller."
   value       = aws_iam_role.karpenter_controller.arn
