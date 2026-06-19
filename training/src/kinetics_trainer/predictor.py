@@ -20,7 +20,8 @@ from typing import Protocol
 
 import torch
 
-from .model import CNNLSTM
+from .config import Config
+from .model import ModelFactory
 from .observability import get_logger
 
 log = get_logger("kinetics_predictor")
@@ -74,7 +75,7 @@ def decode_video_bytes(raw: bytes, clip_length: int = 16, frame_size: int = 224)
 
 
 class Predictor:
-    """Loads a trained CNN-LSTM artifact and runs top-k inference."""
+    """Loads any registered trained model artifact and runs top-k inference."""
 
     def __init__(
         self,
@@ -102,22 +103,19 @@ class Predictor:
 
     @classmethod
     def from_model_dir(cls, model_dir: str) -> Predictor:
-        """Build a predictor from a model artifact directory."""
+        """Build a predictor from a model artifact directory.
+
+        Rebuilds *any* registered model (cnn_lstm / r2plus1d / videomae) via the
+        ModelFactory from the saved model_config.json, so the serving path tracks
+        the training registry — no per-architecture branching here.
+        """
         with open(os.path.join(model_dir, "model_config.json")) as f:
             cfg = json.load(f)
         with open(os.path.join(model_dir, "label_map.json")) as f:
             label_map = json.load(f)
-        if cfg["model"] != "cnn_lstm":
-            raise ValueError(f"predictor supports cnn_lstm, got {cfg['model']}")
 
-        model = CNNLSTM(
-            num_classes=cfg["num_classes"],
-            backbone=cfg["backbone"],
-            pretrained=False,
-            hidden_size=cfg["hidden_size"],
-            lstm_layers=cfg["lstm_layers"],
-            bidirectional=cfg["bidirectional"],
-        )
+        # Rebuild the model architecture from the config, then load the state dict.
+        model = ModelFactory.create(Config.for_inference(cfg))
         state = torch.load(os.path.join(model_dir, "model.pth"), map_location="cpu")
         model.load_state_dict(state)
         model.eval()
