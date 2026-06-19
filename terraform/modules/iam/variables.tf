@@ -23,6 +23,12 @@ variable "karpenter_interruption_queue_arn" {
   type        = string
 }
 
+variable "ecr_repository_arn" {
+  description = "ECR repo ARN the ArgoCD Image Updater role may read. Empty = all repos."
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Tags to apply."
   type        = map(string)
