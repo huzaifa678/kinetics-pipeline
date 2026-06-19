@@ -122,6 +122,7 @@ module "iam" {
   data_bucket_arn                  = module.storage.data_bucket_arn
   checkpoint_bucket_arn            = module.storage.checkpoint_bucket_arn
   karpenter_interruption_queue_arn = module.karpenter.interruption_queue_arn
+  ecr_repository_arn               = module.ecr.repository_arn
 
   tags = local.common_tags
 }
@@ -221,6 +222,7 @@ module "addons" {
 
   ack_sagemaker_role_arn = module.iam.ack_sagemaker_role_arn
   karpenter_role_arn     = module.iam.karpenter_role_arn
+  image_updater_role_arn = module.iam.image_updater_role_arn
 
   enable_argocd            = var.enable_argocd
   enable_hyperpod_operator = var.enable_hyperpod_operator
