@@ -12,4 +12,6 @@ RUN pip install --no-cache-dir \
 
 COPY pyproject.toml ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir ".[seldon]" 
+
+# Install the package with the extra dependencies for Seldon and VideoMAE
+RUN pip install --no-cache-dir ".[seldon,videomae]" 
