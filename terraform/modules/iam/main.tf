@@ -189,6 +189,42 @@ resource "aws_iam_role_policy_attachment" "ack_sagemaker" {
 }
 
 # ===========================================================================
+# ArgoCD Image Updater: Pod Identity role with read-only ECR access (poll tags
+# + mint a short-lived registry token). Optional/capability — harmless if the
+# Image Updater isn't installed.
+# ===========================================================================
+data "aws_iam_policy_document" "image_updater" {
+  statement {
+    sid       = "EcrAuthToken"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+  statement {
+    sid = "EcrReadRepo"
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:DescribeImages",
+      "ecr:ListImages",
+    ]
+    resources = [var.ecr_repository_arn != "" ? var.ecr_repository_arn : "*"]
+  }
+}
+
+resource "aws_iam_role" "image_updater" {
+  name               = "${var.name}-image-updater"
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy" "image_updater" {
+  name   = "${var.name}-image-updater-ecr"
+  role   = aws_iam_role.image_updater.id
+  policy = data.aws_iam_policy_document.image_updater.json
+}
+
+# ===========================================================================
 # Karpenter: node role (EC2 trust) + controller role (Pod Identity).
 # ===========================================================================
 data "aws_iam_policy_document" "karpenter_node_assume" {
