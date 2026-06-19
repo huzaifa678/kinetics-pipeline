@@ -18,6 +18,11 @@ variable "karpenter_role_arn" {
   type        = string
 }
 
+variable "image_updater_role_arn" {
+  description = "Pod Identity role ARN for the ArgoCD Image Updater (ECR read)."
+  type        = string
+}
+
 variable "enable_argocd" {
   description = "Install ArgoCD and bootstrap the app-of-apps."
   type        = bool
