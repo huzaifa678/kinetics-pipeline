@@ -14,6 +14,17 @@ resource "aws_eks_pod_identity_association" "ack_sagemaker" {
   tags            = var.tags
 }
 
+# The ArgoCD image update needs permission to read the ECR repos and pull the images
+# Pod identity instead of IRSA, best because minimal permissions and only needed for a single service account in the argocd namespace, 
+# so no need to create a separate OIDC provider or IRSA role for it.
+resource "aws_eks_pod_identity_association" "image_updater" {
+  cluster_name    = var.cluster_name
+  namespace       = "argocd"
+  service_account = "argocd-image-updater"
+  role_arn        = var.image_updater_role_arn
+  tags            = var.tags
+}
+
 
 resource "helm_release" "argocd" {
   count            = var.enable_argocd ? 1 : 0
