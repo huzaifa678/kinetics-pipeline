@@ -18,6 +18,7 @@ jobs:
     outputs:
       train_tag: ${{ steps.meta.outputs.train_tag }}
       serve_tag: ${{ steps.meta.outputs.serve_tag }}
+      seldon_tag: ${{ steps.meta.outputs.seldon_tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,10 +26,12 @@ jobs:
         id: meta
         run: |
           short=$(git rev-parse --short HEAD)
-          # Distinct prefixes: training (sha-) and serving (serve-) share the ECR
-          # repo but never collide, so immutable-tag pushes stay safe.
+          # Distinct prefixes: training (sha-), FastAPI edge (serve-) and the
+          # Seldon custom MLServer runtime (seldon-) share the ECR repo but never
+          # collide, so immutable-tag pushes stay safe.
           echo "train_tag=sha-$short" >> "$GITHUB_OUTPUT"
           echo "serve_tag=serve-$short" >> "$GITHUB_OUTPUT"
+          echo "seldon_tag=seldon-$short" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -65,6 +68,17 @@ jobs:
           cache-from: type=gha,scope=serving
           cache-to: type=gha,mode=max,scope=serving
 
+      - name: Build and push Seldon MLServer runtime image (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: training
+          file: training/Dockerfile.seldon
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.ECR_REPOSITORY }}:${{ steps.meta.outputs.seldon_tag }}
+          cache-from: type=gha,scope=seldon
+          cache-to: type=gha,mode=max,scope=seldon
+
   # Bump the training chart's image tag in the GitOps repo.
   bump-training:
     needs: build
@@ -82,4 +96,14 @@ jobs:
     with:
       image_tag: ${{ needs.build.outputs.serve_tag }}
       values_path: helm/inference-service/values.yaml
+    secrets: inherit
+
+  # Bump the Seldon custom-server image in the A/B experiment chart. Chained after
+  # bump-inference so all three GitOps-repo commits serialize.
+  bump-seldon:
+    needs: [build, bump-inference]
+    uses: ./.github/workflows/update-gitops.yml
+    with:
+      image_tag: ${{ needs.build.outputs.seldon_tag }}
+      values_path: gitops/config/seldon-experiment/values.yaml
     secrets: inherit
