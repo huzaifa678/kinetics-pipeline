@@ -142,8 +142,10 @@ def test_tracker_disabled_is_noop():
 
 
 def test_model_factory_registry():
-    # cnn_lstm + r2plus1d are registered; factory builds without an if/elif chain.
-    assert {"cnn_lstm", "r2plus1d"}.issubset(set(ModelFactory.available()))
+    # cnn_lstm + r2plus1d + videomae are registered; factory builds without an
+    # if/elif chain. (videomae's build needs transformers + weights, so we only
+    # assert registration here, not construction.)
+    assert {"cnn_lstm", "r2plus1d", "videomae"}.issubset(set(ModelFactory.available()))
     cfg = parse_args(
         [
             "--model=cnn_lstm",
