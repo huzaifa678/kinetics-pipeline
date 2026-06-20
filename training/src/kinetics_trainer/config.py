@@ -67,6 +67,10 @@ class Config:
     # shard path (resampled + with_epoch): each rank does epoch_size/world_size
     # samples, so uneven shard counts never desync ranks. 0 = single pass (1 node).
     shard_epoch_size: int = 0
+    # LR scaling for the global (multi-rank) batch. Global batch = batch_size *
+    # world_size, so the LR usually should grow with it: "linear" (lr * world_size,
+    # large-batch SGD rule), "sqrt" (gentler, often better for Adam), "none".
+    lr_scaling: str = "none"
 
     @classmethod
     def for_inference(cls, model_cfg: dict) -> Config:
@@ -148,6 +152,7 @@ def parse_args(argv: list[str] | None = None) -> Config:
         default=0.1,
         help="backbone LR = lr * this (discriminative fine-tuning)",
     )
+    p.add_argument("--lr-scaling", default="none", choices=["none", "linear", "sqrt"])
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--warmup-epochs", type=int, default=2)
     p.add_argument("--amp", default="bf16", choices=["no", "fp16", "bf16"])
@@ -189,6 +194,7 @@ def parse_args(argv: list[str] | None = None) -> Config:
         epochs=a.epochs,
         lr=a.lr,
         backbone_lr_mult=a.backbone_lr_mult,
+        lr_scaling=a.lr_scaling,
         weight_decay=a.weight_decay,
         warmup_epochs=a.warmup_epochs,
         amp=a.amp,
