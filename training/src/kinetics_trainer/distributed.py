@@ -81,6 +81,21 @@ def get_world_size() -> int:
     return dist.get_world_size() if is_dist_avail_and_initialized() else 1
 
 
+def scaled_lr(base_lr: float, mode: str, world_size: int) -> float:
+    """Scale the base LR for the global (multi-rank) batch.
+
+    Global batch = per-GPU batch * world_size, so the LR usually grows with it:
+    "linear" = base_lr * world_size (large-batch SGD rule), "sqrt" = base_lr *
+    sqrt(world_size) (gentler, common for Adam), "none" = unchanged. world_size==1
+    or mode "none" leaves it untouched, so single-node runs are unaffected.
+    """
+    if mode == "linear":
+        return base_lr * world_size
+    if mode == "sqrt":
+        return base_lr * (world_size**0.5)
+    return base_lr
+
+
 def setup_distributed(timeout_minutes: int | None = None) -> DistContext:
     """Resolve device + rank from the torchrun env and init the process group.
 
