@@ -22,7 +22,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from .checkpoint import CheckpointManager
 from .config import Config
 from .data import KineticsDataModule, save_label_map
-from .distributed import DistContext, all_reduce_mean, barrier
+from .distributed import DistContext, all_reduce_mean, barrier, scaled_lr
 from .engine import AMP_DTYPE, accuracy
 from .model import build_param_groups, model_config
 from .observability import get_logger
@@ -84,8 +84,17 @@ class Trainer:
         Called at start and again when the backbone unfreezes.
         """
         cfg = self.cfg
+        lr = scaled_lr(cfg.lr, cfg.lr_scaling, self.ctx.world_size)
+        if lr != cfg.lr:
+            log.info(
+                "scaled LR %.2e -> %.2e (%s, world_size=%d)",
+                cfg.lr,
+                lr,
+                cfg.lr_scaling,
+                self.ctx.world_size,
+            )
         optimizer = torch.optim.AdamW(
-            build_param_groups(self._unwrap(), cfg.lr, cfg.backbone_lr_mult),
+            build_param_groups(self._unwrap(), lr, cfg.backbone_lr_mult),
             weight_decay=cfg.weight_decay,
         )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.epochs)
