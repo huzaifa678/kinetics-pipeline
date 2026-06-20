@@ -33,6 +33,24 @@ resource "aws_s3_bucket_public_access_block" "data" {
   restrict_public_buckets = true
 }
 
+# Cost: move dataset objects to S3 Intelligent-Tiering, which auto-demotes
+# un-accessed objects (Frequent -> Infrequent -> Archive Instant Access) and
+# promotes them back on read — all instant-read, so FSx-for-Lustre can still
+# import them (FSx supports Standard / Standard-IA / Intelligent-Tiering, but NOT
+# Glacier). No archive opt-in tiers (those need async restore -> would break FSx).
+resource "aws_s3_bucket_lifecycle_configuration" "data" {
+  bucket = aws_s3_bucket.data.id
+  rule {
+    id     = "intelligent-tiering"
+    status = "Enabled"
+    filter {}
+    transition {
+      days          = 0
+      storage_class = "INTELLIGENT_TIERING"
+    }
+  }
+}
+
 
 resource "aws_s3_bucket" "checkpoints" {
   bucket = "${var.name}-checkpoints-${local.suffix}"
