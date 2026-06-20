@@ -18,6 +18,17 @@ variable "karpenter_role_arn" {
   type        = string
 }
 
+variable "etl_shards_role_arn" {
+  description = "Pod Identity role ARN for the ETL shard-build Job (S3 write)."
+  type        = string
+}
+
+variable "etl_shards_namespace" {
+  description = "Namespace the ETL shard Job runs in (must match where you apply it)."
+  type        = string
+  default     = "default"
+}
+
 variable "image_updater_role_arn" {
   description = "Pod Identity role ARN for the ArgoCD Image Updater (ECR read)."
   type        = string
