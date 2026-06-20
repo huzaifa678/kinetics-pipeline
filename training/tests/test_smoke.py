@@ -23,6 +23,7 @@ from kinetics_trainer.distributed import (
     get_rank,
     get_world_size,
     is_dist_avail_and_initialized,
+    scaled_lr,
     setup_distributed,
 )
 from kinetics_trainer.model import (
@@ -42,6 +43,13 @@ from kinetics_trainer.tracking import (
 
 def test_str2bool():
     assert str2bool("true") and str2bool("1") and not str2bool("false")
+
+
+def test_scaled_lr():
+    assert scaled_lr(1e-3, "none", 8) == 1e-3  # unchanged
+    assert scaled_lr(1e-3, "linear", 8) == 8e-3  # * world_size
+    assert scaled_lr(1e-3, "sqrt", 4) == 2e-3  # * sqrt(world_size)
+    assert scaled_lr(1e-3, "linear", 1) == 1e-3  # single node unaffected
 
 
 def test_config_parses_chart_flags():
