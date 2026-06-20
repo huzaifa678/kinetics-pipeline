@@ -51,8 +51,16 @@ videomae = [
     "transformers>=4.40",
 ]
 
+# Offline ETL: decode + shard clips into WebDataset tars (kinetics_trainer.etl).
+# Installed in the ETL job image (decode reuses the trainer's PyAV path).
+etl = [
+    "webdataset>=0.2",
+    "pillow>=10",        # JPEG encode/decode for shard frames
+]
+
 [project.scripts]
 kinetics-train = "kinetics_trainer.cli:main"
+kinetics-build-shards = "kinetics_trainer.etl.build_shards:main"
 
 [tool.setuptools.dynamic]
 version = { attr = "kinetics_trainer.__version__" }
