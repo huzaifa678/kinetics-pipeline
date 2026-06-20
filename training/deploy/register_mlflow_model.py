@@ -1,9 +1,9 @@
 """Register a CNN-LSTM artifact into the (SageMaker-managed) MLflow Model Registry.
 
 The MLflow registry is the source of truth for which model versions are
-deployable; Seldon then pulls the resolved S3 artifact. Auth to a SageMaker-managed MLflow server is SigV4 via
-the ``sagemaker-mlflow`` plugin — just pass the tracking-server ARN as the
-tracking URI.
+deployable; Seldon then pulls the resolved S3 artifact. Auth to a SageMaker-managed
+MLflow server is SigV4 via the ``sagemaker-mlflow`` plugin — just pass the
+tracking-server ARN as the tracking URI.
 
     python deploy/register_mlflow_model.py \
         --model-dir /opt/ml/model \

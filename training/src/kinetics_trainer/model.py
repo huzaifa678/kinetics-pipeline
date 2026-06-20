@@ -186,7 +186,8 @@ def _build_r2plus1d(cfg: Config) -> nn.Module:
     return _ChannelsTimeAdapter(net)
 
 
-# A heavier transformer challenger for A/B against the CNN-LSTM. Fine-tune from a pretrained checkpoint to keep GPU cost sane
+# A heavier transformer challenger for A/B against the CNN-LSTM. Fine-tune from a
+# pretrained checkpoint to keep GPU cost sane.
 _VIDEOMAE_CHECKPOINT = "MCG-NJU/videomae-base"
 
 
