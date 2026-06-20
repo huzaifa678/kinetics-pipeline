@@ -189,6 +189,36 @@ resource "aws_iam_role_policy_attachment" "ack_sagemaker" {
 }
 
 # ===========================================================================
+# ETL shard-build Job (Pod Identity): writes WebDataset shards to the data
+# bucket. Input mp4s are read from the FSx /data mount (POSIX), so it only needs
+# S3 *write* to the output prefix — least privilege.
+# ===========================================================================
+data "aws_iam_policy_document" "etl_shards" {
+  statement {
+    sid       = "ShardsS3Write"
+    actions   = ["s3:PutObject", "s3:AbortMultipartUpload"]
+    resources = ["${var.data_bucket_arn}/*"]
+  }
+  statement {
+    sid       = "ShardsS3List"
+    actions   = ["s3:ListBucket"]
+    resources = [var.data_bucket_arn]
+  }
+}
+
+resource "aws_iam_role" "etl_shards" {
+  name               = "${var.name}-etl-shards"
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy" "etl_shards" {
+  name   = "${var.name}-etl-shards-s3"
+  role   = aws_iam_role.etl_shards.id
+  policy = data.aws_iam_policy_document.etl_shards.json
+}
+
+# ===========================================================================
 # ArgoCD Image Updater: Pod Identity role with read-only ECR access (poll tags
 # + mint a short-lived registry token). Optional/capability — harmless if the
 # Image Updater isn't installed.

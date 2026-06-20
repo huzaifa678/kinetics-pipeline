@@ -222,6 +222,7 @@ module "addons" {
 
   ack_sagemaker_role_arn = module.iam.ack_sagemaker_role_arn
   karpenter_role_arn     = module.iam.karpenter_role_arn
+  etl_shards_role_arn    = module.iam.etl_shards_role_arn
   image_updater_role_arn = module.iam.image_updater_role_arn
 
   enable_argocd            = var.enable_argocd
