@@ -14,6 +14,16 @@ resource "aws_eks_pod_identity_association" "ack_sagemaker" {
   tags            = var.tags
 }
 
+# ETL shard-build Job SA -> S3 write role (Pod Identity). Namespace must match
+# where the etl-shards Job is applied (default "default").
+resource "aws_eks_pod_identity_association" "etl_shards" {
+  cluster_name    = var.cluster_name
+  namespace       = var.etl_shards_namespace
+  service_account = "etl-shards"
+  role_arn        = var.etl_shards_role_arn
+  tags            = var.tags
+}
+
 # The ArgoCD image update needs permission to read the ECR repos and pull the images
 # Pod identity instead of IRSA, best because minimal permissions and only needed for a single service account in the argocd namespace, 
 # so no need to create a separate OIDC provider or IRSA role for it.
