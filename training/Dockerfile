@@ -13,7 +13,7 @@ COPY src/ ./src/
 # its runtime deps (incl. the [otel] extra) into the same wheelhouse. torch /
 # torchvision are excluded by pyproject (the base image provides them).
 RUN python -m build --wheel --outdir /wheels . \
-    && pip wheel --no-cache-dir --wheel-dir /wheels ".[otel]"
+    && pip wheel --no-cache-dir --wheel-dir /wheels ".[otel,etl]"
 
 FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime AS runtime
 
@@ -25,7 +25,7 @@ WORKDIR /workspace
 
 # Install the trainer + deps purely from local wheels, then drop the wheelhouse.
 COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir --no-index --find-links=/wheels "kinetics-trainer[otel]" \
+RUN pip install --no-cache-dir --no-index --find-links=/wheels "kinetics-trainer[otel,etl]" \
     && rm -rf /wheels
 
 # torchrun entrypoint script (the package itself is installed via the wheel).

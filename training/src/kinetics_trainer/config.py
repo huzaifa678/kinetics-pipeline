@@ -56,6 +56,17 @@ class Config:
     resume: bool
     output_dir: str
     log_every: int
+    # data source: "manifest" decodes mp4s per epoch; "shards" streams pre-decoded
+    # WebDataset tars from kinetics_trainer.etl (train_manifest still supplies the
+    # label map, whose ordering the shard cls indices match). Defaulted so existing
+    # construction sites and Config.for_inference are unaffected.
+    data_format: str = "manifest"
+    train_shards: str = ""
+    val_shards: str = ""
+    # Total training samples per epoch across all ranks. >0 enables the DDP-safe
+    # shard path (resampled + with_epoch): each rank does epoch_size/world_size
+    # samples, so uneven shard counts never desync ranks. 0 = single pass (1 node).
+    shard_epoch_size: int = 0
 
     @classmethod
     def for_inference(cls, model_cfg: dict) -> Config:
@@ -119,6 +130,13 @@ def parse_args(argv: list[str] | None = None) -> Config:
     p.add_argument("--train-manifest", required=True)
     p.add_argument("--val-manifest", required=True)
     p.add_argument("--num-workers", type=int, default=8)
+    # Pre-decoded WebDataset shards (kinetics_trainer.etl). data-format=shards reads
+    # these instead of decoding mp4s; brace patterns or pipe: URLs, e.g.
+    # "pipe:aws s3 cp s3://bucket/train/clips-{00000..00063}.tar -".
+    p.add_argument("--data-format", default="manifest", choices=["manifest", "shards"])
+    p.add_argument("--train-shards", default="")
+    p.add_argument("--val-shards", default="")
+    p.add_argument("--shard-epoch-size", type=int, default=0, help="total train samples/epoch")
 
     # optimization
     p.add_argument("--batch-size", type=int, default=16)
@@ -163,6 +181,10 @@ def parse_args(argv: list[str] | None = None) -> Config:
         train_manifest=a.train_manifest,
         val_manifest=a.val_manifest,
         num_workers=a.num_workers,
+        data_format=a.data_format,
+        train_shards=a.train_shards,
+        val_shards=a.val_shards,
+        shard_epoch_size=a.shard_epoch_size,
         batch_size=a.batch_size,
         epochs=a.epochs,
         lr=a.lr,

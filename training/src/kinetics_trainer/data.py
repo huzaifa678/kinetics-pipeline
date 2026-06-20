@@ -20,7 +20,7 @@ import torchvision.transforms.functional as F
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 
 from .config import Config
-from .distributed import DistContext
+from .distributed import DistContext, get_world_size
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -133,6 +133,58 @@ def build_label_map(train_manifest: str) -> dict[str, int]:
     return {name: i for i, name in enumerate(labels)}
 
 
+def build_webdataset(  # noqa: ANN201
+    shards: str,
+    frame_size: int,
+    train: bool,
+    distributed: bool,
+    world_size: int = 1,
+    epoch_size: int = 0,
+):
+    """Stream pre-decoded WebDataset shards (from kinetics_trainer.etl) as (clip, label).
+
+    Each shard sample is ``{NNN.jpg per frame, cls.txt: <idx>}``; frames decode to
+    uint8 HWC, stack to a (T,H,W,3) clip, then the clip transform (resize/crop/flip/
+    normalize) is applied here so augmentation stays at train time. webdataset is
+    imported lazily (only shards mode needs it).
+
+    Two epoch strategies:
+
+    * **DDP-safe** (train + ``epoch_size > 0``): ``resampled=True`` makes each rank
+      independently resample from *all* shards (no partitioning), and ``with_epoch``
+      caps every rank to ``epoch_size / world_size`` samples — so ranks always do the
+      same number of steps and never desync on uneven shard counts. An "epoch" is
+      statistical (sampling with replacement), the standard large-scale DDP pattern.
+    * **Single pass** (eval, or train with ``epoch_size == 0``): ``split_by_node``
+      gives each rank a shard subset, one pass = one epoch. Fine for 1 node / eval.
+    """
+    import webdataset as wds
+
+    transform = build_transform(frame_size, train)
+
+    def _to_pair(sample: dict) -> tuple[torch.Tensor, int]:
+        # Frames are stored as NNN.jpg (decoded to uint8 HWC by decode("rgb8")):
+        # sort by key and stack back into a (T,H,W,3) clip for ClipTransform.
+        frame_keys = sorted(k for k in sample if k.endswith(".jpg"))
+        clip = np.stack([sample[k] for k in frame_keys], axis=0)
+        return transform(clip), int(sample["cls.txt"])
+
+    if train and epoch_size > 0:
+        ds = wds.WebDataset(shards, resampled=True, shardshuffle=True, empty_check=False)
+        ds = ds.shuffle(1000).decode("rgb8").map(_to_pair)
+        return ds.with_epoch(max(1, epoch_size // max(1, world_size)))
+
+    ds = wds.WebDataset(
+        shards,
+        shardshuffle=train,
+        nodesplitter=wds.split_by_node if distributed else None,
+        empty_check=False,
+    )
+    if train:
+        ds = ds.shuffle(1000)
+    return ds.decode("rgb8").map(_to_pair)
+
+
 class KineticsDataModule:
     """Owns dataset/dataloader construction (Lightning-style).
 
@@ -152,7 +204,13 @@ class KineticsDataModule:
 
     def setup(self) -> KineticsDataModule:
         cfg, ctx = self.cfg, self.ctx
+        # Label map always comes from the train manifest — its sorted-unique ordering
+        # is what the ETL shard cls indices were written against.
         self.label_map = build_label_map(cfg.train_manifest)
+
+        if cfg.data_format == "shards":
+            return self._setup_shards()
+
         train_ds = KineticsClipDataset(
             cfg.train_manifest, cfg.clip_length, cfg.frame_size, self.label_map, train=True
         )
@@ -183,6 +241,43 @@ class KineticsDataModule:
             persistent_workers=cfg.num_workers > 0,
         )
         self.data_hash = manifest_hash(cfg.train_manifest, cfg.val_manifest)
+        return self
+
+    def _setup_shards(self) -> KineticsDataModule:
+        """Build WebDataset (IterableDataset) loaders from pre-decoded shards."""
+        import hashlib
+
+        cfg, ctx = self.cfg, self.ctx
+        dist = ctx.distributed
+        ws = get_world_size()
+        train_ds = build_webdataset(
+            cfg.train_shards,
+            cfg.frame_size,
+            train=True,
+            distributed=dist,
+            world_size=ws,
+            epoch_size=cfg.shard_epoch_size,
+        )
+        val_ds = build_webdataset(cfg.val_shards, cfg.frame_size, train=False, distributed=dist)
+        self.train_loader = DataLoader(
+            train_ds,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_workers,
+            pin_memory=True,
+            drop_last=True,
+            persistent_workers=cfg.num_workers > 0,
+        )
+        self.val_loader = DataLoader(
+            val_ds,
+            batch_size=cfg.batch_size,
+            num_workers=cfg.num_workers,
+            pin_memory=True,
+            persistent_workers=cfg.num_workers > 0,
+        )
+        # IterableDataset -> no DistributedSampler (wds splits shards by node/worker).
+        self.train_sampler = None
+        key = f"{cfg.train_shards}|{cfg.val_shards}".encode()
+        self.data_hash = hashlib.sha256(key).hexdigest()[:16]
         return self
 
 
