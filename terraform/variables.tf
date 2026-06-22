@@ -361,3 +361,67 @@ variable "gitops_repo_revision" {
   type        = string
   default     = "main"
 }
+
+# ---------------------------------------------------------------------------
+# Inference ingress — internal ALB via the AWS Load Balancer Controller, with
+# an ACM cert + Route53 record for a real HTTPS endpoint reachable over the
+# Client VPN. All off/empty by default: existing runs stay ClusterIP-only.
+# ---------------------------------------------------------------------------
+variable "enable_aws_lb_controller" {
+  description = "Install the AWS Load Balancer Controller (required for the inference Ingress to provision an ALB). Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "enable_external_dns" {
+  description = "Install external-dns so the inference ALB auto-registers its Route53 A-record (the ALB DNS name isn't known at apply time). Requires inference_route53_zone_id."
+  type        = bool
+  default     = false
+}
+
+variable "inference_domain_name" {
+  description = "FQDN for the inference endpoint (e.g. inference.example.com). Empty = no ACM cert / DNS record is created."
+  type        = string
+  default     = ""
+}
+
+variable "inference_route53_zone_id" {
+  description = "Route53 hosted zone ID for ACM DNS validation + the inference A-record. Required when inference_domain_name is set."
+  type        = string
+  default     = ""
+}
+
+variable "aws_lb_controller_chart_version" {
+  description = "aws-load-balancer-controller Helm chart version (eks-charts)."
+  type        = string
+  default     = "1.13.3"
+}
+
+variable "external_dns_chart_version" {
+  description = "external-dns Helm chart version (kubernetes-sigs)."
+  type        = string
+  default     = "1.15.2"
+}
+
+
+variable "enable_managed_prometheus" {
+  description = "Create an Amazon Managed Service for Prometheus (AMP) workspace + a Pod Identity role so the in-cluster Prometheus can remote_write to it. Metrics then survive terraform destroy."
+  type        = bool
+  default     = false
+}
+
+variable "enable_managed_grafana" {
+  description = <<-EOT
+    Create an Amazon Managed Grafana (AMG) workspace (AMP + X-Ray datasources).
+    NOTE: AMG requires IAM Identity Center (SSO) or SAML to log in — plain IAM
+    users cannot sign in. Leave off until SSO/SAML is configured for the account.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "enable_xray_tracing" {
+  description = "Create an X-Ray write role + Pod Identity association for the in-cluster OTel collector, so trainer/inference spans export to AWS X-Ray (the GitOps otel-collector values add the awsxray exporter). Traces then survive terraform destroy."
+  type        = bool
+  default     = false
+}

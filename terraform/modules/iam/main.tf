@@ -438,3 +438,143 @@ resource "aws_iam_role_policy" "karpenter_controller" {
   role   = aws_iam_role.karpenter_controller.id
   policy = data.aws_iam_policy_document.karpenter_controller.json
 }
+
+# ===========================================================================
+# AMP remote_write (Pod Identity): lets the in-cluster Prometheus
+# (kube-prometheus-stack-prometheus / monitoring) ship metrics to the AMP
+# workspace. Gated by the workspace ARN — created only when AMP is enabled.
+# ===========================================================================
+data "aws_iam_policy_document" "amp_remote_write" {
+  count = var.amp_workspace_arn != "" ? 1 : 0
+
+  statement {
+    sid       = "AmpRemoteWrite"
+    actions   = ["aps:RemoteWrite", "aps:GetSeries", "aps:GetLabels", "aps:GetMetricMetadata"]
+    resources = [var.amp_workspace_arn]
+  }
+}
+
+resource "aws_iam_role" "amp_remote_write" {
+  count = var.amp_workspace_arn != "" ? 1 : 0
+
+  name               = "${var.name}-amp-remote-write"
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy" "amp_remote_write" {
+  count = var.amp_workspace_arn != "" ? 1 : 0
+
+  name   = "${var.name}-amp-remote-write"
+  role   = aws_iam_role.amp_remote_write[0].id
+  policy = data.aws_iam_policy_document.amp_remote_write[0].json
+}
+
+# ===========================================================================
+# OTel collector -> X-Ray (Pod Identity): lets the in-cluster otel-collector
+# (otel-collector / observability) push trace segments to AWS X-Ray, and
+# (if AMP is on) remote_write metrics too.
+# ===========================================================================
+data "aws_iam_policy_document" "otel_xray" {
+  count = var.enable_xray_tracing ? 1 : 0
+
+  statement {
+    sid = "XRayWrite"
+    actions = [
+      "xray:PutTraceSegments",
+      "xray:PutTelemetryRecords",
+      "xray:GetSamplingRules",
+      "xray:GetSamplingTargets",
+      "xray:GetSamplingStatisticSummaries",
+    ]
+    resources = ["*"]
+  }
+
+  dynamic "statement" {
+    for_each = var.amp_workspace_arn != "" ? [1] : []
+    content {
+      sid       = "AmpRemoteWrite"
+      actions   = ["aps:RemoteWrite", "aps:GetSeries", "aps:GetLabels", "aps:GetMetricMetadata"]
+      resources = [var.amp_workspace_arn]
+    }
+  }
+}
+
+resource "aws_iam_role" "otel_xray" {
+  count = var.enable_xray_tracing ? 1 : 0
+
+  name               = "${var.name}-otel-xray"
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy" "otel_xray" {
+  count = var.enable_xray_tracing ? 1 : 0
+
+  name   = "${var.name}-otel-xray"
+  role   = aws_iam_role.otel_xray[0].id
+  policy = data.aws_iam_policy_document.otel_xray[0].json
+}
+
+# ===========================================================================
+# AWS Load Balancer Controller (Pod Identity): provisions ALBs for the
+# inference Ingress. Uses the upstream policy doc vendored under policies/.
+# ===========================================================================
+resource "aws_iam_policy" "aws_lbc" {
+  count = var.enable_aws_lb_controller ? 1 : 0
+
+  name   = "${var.name}-aws-lbc"
+  policy = file("${path.module}/policies/aws-lb-controller.json")
+  tags   = var.tags
+}
+
+resource "aws_iam_role" "aws_lbc" {
+  count = var.enable_aws_lb_controller ? 1 : 0
+
+  name               = "${var.name}-aws-lbc"
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "aws_lbc" {
+  count = var.enable_aws_lb_controller ? 1 : 0
+
+  role       = aws_iam_role.aws_lbc[0].name
+  policy_arn = aws_iam_policy.aws_lbc[0].arn
+}
+
+# ===========================================================================
+# external-dns (Pod Identity): manages the inference A-record in Route53.
+# Scoped to the configured hosted zone when provided.
+# ===========================================================================
+data "aws_iam_policy_document" "external_dns" {
+  count = var.enable_external_dns ? 1 : 0
+
+  statement {
+    sid       = "ChangeRecords"
+    actions   = ["route53:ChangeResourceRecordSets"]
+    resources = var.route53_zone_id != "" ? ["arn:${local.partition}:route53:::hostedzone/${var.route53_zone_id}"] : ["arn:${local.partition}:route53:::hostedzone/*"]
+  }
+
+  statement {
+    sid       = "ListZones"
+    actions   = ["route53:ListHostedZones", "route53:ListResourceRecordSets", "route53:ListTagsForResource"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role" "external_dns" {
+  count = var.enable_external_dns ? 1 : 0
+
+  name               = "${var.name}-external-dns"
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy" "external_dns" {
+  count = var.enable_external_dns ? 1 : 0
+
+  name   = "${var.name}-external-dns"
+  role   = aws_iam_role.external_dns[0].id
+  policy = data.aws_iam_policy_document.external_dns[0].json
+}
