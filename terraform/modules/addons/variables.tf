@@ -82,6 +82,76 @@ variable "argocd_apps_version" {
   default     = "2.0.2"
 }
 
+# ---------------------------------------------------------------------------
+# Inference ingress (AWS LB Controller + external-dns) and AWS-managed
+# observability Pod Identity wiring. All gated; empty ARN / false = not created.
+# ---------------------------------------------------------------------------
+variable "region" {
+  description = "AWS region (for the LB controller + external-dns)."
+  type        = string
+  default     = ""
+}
+
+variable "vpc_id" {
+  description = "VPC ID the AWS Load Balancer Controller provisions ALBs in."
+  type        = string
+  default     = ""
+}
+
+variable "enable_aws_lb_controller" {
+  description = "Install the AWS Load Balancer Controller."
+  type        = bool
+  default     = false
+}
+
+variable "enable_external_dns" {
+  description = "Install external-dns."
+  type        = bool
+  default     = false
+}
+
+variable "aws_lbc_role_arn" {
+  description = "Pod Identity role ARN for the AWS Load Balancer Controller."
+  type        = string
+  default     = ""
+}
+
+variable "external_dns_role_arn" {
+  description = "Pod Identity role ARN for external-dns."
+  type        = string
+  default     = ""
+}
+
+variable "external_dns_domain_filter" {
+  description = "Domain external-dns is restricted to (e.g. the inference FQDN/zone). Empty = unrestricted."
+  type        = string
+  default     = ""
+}
+
+variable "amp_remote_write_role_arn" {
+  description = "Pod Identity role ARN for in-cluster Prometheus -> AMP remote_write. Empty = no association."
+  type        = string
+  default     = ""
+}
+
+variable "otel_xray_role_arn" {
+  description = "Pod Identity role ARN for the otel-collector -> X-Ray. Empty = no association."
+  type        = string
+  default     = ""
+}
+
+variable "aws_lb_controller_chart_version" {
+  description = "aws-load-balancer-controller Helm chart version."
+  type        = string
+  default     = "1.13.3"
+}
+
+variable "external_dns_chart_version" {
+  description = "external-dns Helm chart version."
+  type        = string
+  default     = "1.15.2"
+}
+
 variable "tags" {
   description = "Tags to apply."
   type        = map(string)
