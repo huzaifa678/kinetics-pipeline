@@ -30,14 +30,17 @@ locals {
   repo         = "${var.github_owner}/${var.github_repo}"
 
   # Which GitHub ref/context each role will accept (the OIDC `sub` claim).
-  #   * push/apply: only the default branch or the protected `production` env.
-  #   * plan:       only pull-request runs (read-only).
-  main_subjects = [
-    "repo:${local.repo}:ref:refs/heads/${var.default_branch}",
-    "repo:${local.repo}:environment:${var.apply_environment}",
-  ]
+  #   * apply: the default branch (push) OR any of the per-env GitHub Environments
+  #            (dispatch sets environment:<profile>; gate each in repo Settings).
+  #   * plan:  pull-request runs, plus the default branch (manual plan dispatch).
+  main_subjects = concat(
+    ["repo:${local.repo}:ref:refs/heads/${var.default_branch}"],
+    [for e in distinct(concat([var.apply_environment], var.apply_environments)) :
+    "repo:${local.repo}:environment:${e}"],
+  )
   pr_subjects = [
     "repo:${local.repo}:pull_request",
+    "repo:${local.repo}:ref:refs/heads/${var.default_branch}",
   ]
 }
 
@@ -83,9 +86,7 @@ data "aws_iam_policy_document" "assume_pr" {
   }
 }
 
-# ===========================================================================
-# Role 1: ECR push (docker-build.yml). Least privilege — only this repo's ECR.
-# ===========================================================================
+
 resource "aws_iam_role" "ecr_push" {
   name               = "${var.name}-gha-ecr-push"
   assume_role_policy = data.aws_iam_policy_document.assume_main.json
@@ -124,10 +125,7 @@ resource "aws_iam_role_policy" "ecr_push" {
   policy = data.aws_iam_policy_document.ecr_push.json
 }
 
-# ===========================================================================
-# Role 2: Terraform plan (terraform-plan.yml). Read-only across the account +
-# read/write only on the remote state object/lock. Runs on pull requests.
-# ===========================================================================
+
 resource "aws_iam_role" "tf_plan" {
   name               = "${var.name}-gha-tf-plan"
   assume_role_policy = data.aws_iam_policy_document.assume_pr.json
@@ -162,11 +160,7 @@ resource "aws_iam_role_policy" "tf_plan_state" {
   policy = data.aws_iam_policy_document.tf_state.json
 }
 
-# ===========================================================================
-# Role 3: Terraform apply (terraform-apply.yml). Broad — this stack creates IAM
-# roles, KMS keys, EKS, SageMaker, etc. Protected by tight trust (default branch
-# or the `production` GitHub Environment, which gates on required reviewers).
-# ===========================================================================
+
 resource "aws_iam_role" "tf_apply" {
   name               = "${var.name}-gha-tf-apply"
   assume_role_policy = data.aws_iam_policy_document.assume_main.json
