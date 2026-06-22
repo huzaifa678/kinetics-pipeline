@@ -1,0 +1,74 @@
+region      = "us-east-1"
+project     = "kinetics-pipeline"
+environment = "prod" # cluster: kinetics-pipeline-prod (separate state/names from dev)
+
+# --- EKS ---
+kubernetes_version        = "1.34"
+system_node_instance_type = "m6i.large"
+system_node_desired_size  = 3 # a touch more headroom than dev for the full platform stack
+
+cluster_admin_principal_arns = [
+  "arn:aws:iam::533267178572:user/terraform",
+]
+
+# Public endpoint stays locked to the NAT EIP (added in main.tf); reach the API
+# over the Client VPN. Add CI egress CIDRs here if apply runs outside the VPN.
+cluster_endpoint_public_access_cidrs = []
+
+# --- AWS Client VPN (SAML / IAM Identity Center) ---
+enable_client_vpn              = true
+vpn_saml_metadata_file         = "client-vpn-saml-metadata.xml"
+vpn_client_cidr_block          = "10.100.0.0/22"
+vpn_split_tunnel               = true
+vpn_authorize_internet         = false
+vpn_saml_application_arn       = "arn:aws:sso::533267178572:application/ssoins-7223d8444c116ea9/apl-7223f4c6c415e416"
+vpn_saml_assignment_user_names = ["HuzaifaGill"]
+
+# --- MSK (Kafka) — ON for Seldon Core v2 Pipelines / async dataflow ---
+enable_msk                 = true
+kafka_version              = "3.6.0"
+msk_broker_instance_type   = "kafka.t3.small"
+msk_broker_ebs_volume_size = 20
+
+# --- HyperPod GPU (autoscaling, scale-to-zero) ---
+gpu_instance_type      = "ml.g5.12xlarge"
+gpu_instance_count     = 0
+enable_gpu_autoscaling = true
+
+enable_hyperpod_operator       = true
+hyperpod_system_instance_count = 1
+
+# --- Experiment tracking ---
+enable_mlflow = true
+
+# --- Cost guardrails (raise the ceiling for a real prod workload) ---
+monthly_budget_usd     = 2000
+budget_alert_emails    = ["huzaifaahmad2210@gmail.com"]
+auto_stop_idle_minutes = 30
+
+# --- Storage ---
+fsx_storage_capacity_gb   = 1200
+checkpoint_retention_days = 30
+
+# --- GitOps ---
+enable_argocd        = true
+gitops_repo_url      = "https://github.com/huzaifa678/Kinetics-Continious-Delivery.git"
+gitops_repo_revision = "main"
+
+# --- Inference ingress (internal ALB over the Client VPN) ---
+enable_aws_lb_controller  = true
+enable_external_dns       = true
+inference_domain_name     = "" # REQUIRED: e.g. "inference.example.com"
+inference_route53_zone_id = "" # REQUIRED: hosted zone ID for the domain above
+
+# --- AWS-managed observability (full hybrid: AMP + AMG + X-Ray) ---
+# AMG requires IAM Identity Center (SSO)/SAML to log in. With it ON here, flip
+# grafana.enabled=false in the CD repo's kube-prometheus-stack values.
+enable_managed_prometheus = true
+enable_managed_grafana    = true
+enable_xray_tracing       = true
+
+# COST while up (us-east-1, GPUs idle at 0): idle baseline ~$1.25/hr (EKS + MLflow
+# + FSx + system nodes + NAT + VPN) + MSK ~$0.13/hr + ALB ~$0.03/hr; AMP usage-based
+# (few $/mo ephemeral, $40-100+/mo if 24/7); AMG flat ~$9/mo. A GPU run on
+# ml.g5.12xlarge adds ~$7.09/hr (Spot ~-60%).
