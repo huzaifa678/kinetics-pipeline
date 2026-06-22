@@ -42,3 +42,23 @@ output "karpenter_node_role_name" {
   description = "EC2 node role name (referenced by Karpenter EC2NodeClass)."
   value       = aws_iam_role.karpenter_node.name
 }
+
+output "amp_remote_write_role_arn" {
+  description = "Pod Identity role ARN for in-cluster Prometheus -> AMP remote_write (empty when AMP is off)."
+  value       = var.amp_workspace_arn != "" ? aws_iam_role.amp_remote_write[0].arn : ""
+}
+
+output "otel_xray_role_arn" {
+  description = "Pod Identity role ARN for the otel-collector -> X-Ray (empty when X-Ray tracing is off)."
+  value       = var.enable_xray_tracing ? aws_iam_role.otel_xray[0].arn : ""
+}
+
+output "aws_lbc_role_arn" {
+  description = "Pod Identity role ARN for the AWS Load Balancer Controller (empty when off)."
+  value       = var.enable_aws_lb_controller ? aws_iam_role.aws_lbc[0].arn : ""
+}
+
+output "external_dns_role_arn" {
+  description = "Pod Identity role ARN for external-dns (empty when off)."
+  value       = var.enable_external_dns ? aws_iam_role.external_dns[0].arn : ""
+}
