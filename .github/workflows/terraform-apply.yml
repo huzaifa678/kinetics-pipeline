@@ -1,8 +1,5 @@
 name: terraform-apply
 
-# Apply on merge to main (or manual dispatch). Gated by the `production`
-# Environment — configure required reviewers on it in repo Settings so applies
-# need a human approval. Assumes the apply role via OIDC.
 on:
   push:
     branches: [main]
@@ -10,11 +7,28 @@ on:
       - "terraform/**"
       - ".github/workflows/terraform-apply.yml"
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "tfvars profile to apply"
+        type: choice
+        default: dev
+        options:
+          - dev
+          - prod
+          - test
+          - novpn # dev + Client VPN OFF
+          - kafka # dev + MSK ON
+      sync_gitops_env:
+        description: "Repoint the ArgoCD ApplicationSet at the matching env (dev/prod)"
+        type: boolean
+        default: true
 
 permissions:
-  id-token: write
+  id-token: write # OIDC
   contents: read
 
+# Single global lock: all profiles share ONE terraform state (one backend key),
+# so applies must never run concurrently regardless of selected profile.
 concurrency:
   group: terraform-apply
   cancel-in-progress: false
@@ -22,12 +36,40 @@ concurrency:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    environment: production
+    # Per-env gate + OIDC subject: the chosen profile = the GitHub Environment.
+    # Configure required reviewers per env in repo Settings (e.g. gate `prod`).
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    outputs:
+      gitops_env: ${{ steps.profile.outputs.gitops_env }}
     defaults:
       run:
         working-directory: terraform
     steps:
       - uses: actions/checkout@v4
+
+      # Map the selected profile -> the -var-file chain + the GitOps env it maps
+      # to. dev/prod/test are standalone; novpn/kafka layer on top of dev (later
+      # var-file wins). Only dev & prod have a gitops/environments/<env> overlay,
+      # so test/novpn/kafka point ArgoCD at dev.
+      - name: Resolve tfvars profile
+        id: profile
+        env:
+          PROFILE: ${{ github.event.inputs.environment || 'dev' }}
+        run: |
+          case "$PROFILE" in
+            dev)   files="-var-file=terraform.tfvars.dev";  genv=dev ;;
+            prod)  files="-var-file=terraform.tfvars.prod"; genv=prod ;;
+            test)  files="-var-file=terraform.tfvars.test"; genv=dev ;;
+            novpn) files="-var-file=terraform.tfvars.dev -var-file=terraform.tfvars.novpn"; genv=dev ;;
+            kafka) files="-var-file=terraform.tfvars.dev -var-file=terraform.tfvars.kafka"; genv=dev ;;
+            *) echo "::error::unknown profile '$PROFILE'"; exit 1 ;;
+          esac
+          for f in $(echo "$files" | tr ' ' '\n' | sed 's/-var-file=//'); do
+            [ -f "$f" ] || { echo "::error::missing var-file $f"; exit 1; }
+          done
+          echo "var_files=$files" >> "$GITHUB_OUTPUT"
+          echo "gitops_env=$genv" >> "$GITHUB_OUTPUT"
+          echo "### Applying profile \`$PROFILE\` ($files)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -43,4 +85,48 @@ jobs:
         run: terraform init -input=false
 
       - name: Apply
-        run: terraform apply -var-file=terraform.tfvars.dev -auto-approve -input=false -lock-timeout=120s
+        run: terraform apply ${{ steps.profile.outputs.var_files }} -auto-approve -input=false -lock-timeout=120s
+
+  # Repoint the ArgoCD ApplicationSet's single `environment` knob at the env we
+  # just applied, so the cluster pulls gitops/environments/<env>/values. Only on
+  # manual dispatch (push-to-main keeps whatever's there). Cross-repo write via
+  # the GitHub App token (same mechanism as update-gitops.yml).
+  flip-gitops-env:
+    needs: apply
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.sync_gitops_env }}
+    runs-on: ubuntu-latest
+    env:
+      GITOPS_ENV: ${{ needs.apply.outputs.gitops_env }}
+    steps:
+      - name: Mint GitHub App token for the GitOps repo
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GITOPS_APP_ID }}
+          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ vars.GITOPS_REPO_NAME }}
+
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ vars.GITOPS_REPO_NAME }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Flip ApplicationSet environment + commit (yq)
+        env:
+          APPSET: gitops/bootstrap/applicationset.yaml
+        run: |
+          # ubuntu-latest ships mikefarah yq v4.
+          yq -i '.spec.generators[0].matrix.generators[0].list.elements[0].environment = strenv(GITOPS_ENV)' "$APPSET"
+          git config user.name "kinetics-ci[bot]"
+          git config user.email "kinetics-ci[bot]@users.noreply.github.com"
+          if git diff --quiet -- "$APPSET"; then
+            echo "ApplicationSet already targets '${GITOPS_ENV}'."
+            exit 0
+          fi
+          git --no-pager diff -- "$APPSET"
+          git add "$APPSET"
+          git commit -m "ci: point ArgoCD ApplicationSet at ${GITOPS_ENV} environment"
+          git push
+          echo "### ArgoCD ApplicationSet -> \`${GITOPS_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
