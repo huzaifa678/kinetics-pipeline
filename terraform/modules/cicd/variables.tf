@@ -22,9 +22,15 @@ variable "default_branch" {
 }
 
 variable "apply_environment" {
-  description = "GitHub Environment (with required reviewers) that may run terraform apply."
+  description = "GitHub Environment (with required reviewers) that may run terraform apply. Kept for back-compat; merged into apply_environments."
   type        = string
   default     = "production"
+}
+
+variable "apply_environments" {
+  description = "GitHub Environments allowed to assume the apply role. The terraform-apply dispatch maps each tfvars profile to a same-named Environment, so configure required-reviewer protection per env (e.g. on `prod`) in repo Settings."
+  type        = list(string)
+  default     = ["production", "dev", "prod", "test", "novpn", "kafka"]
 }
 
 variable "create_oidc_provider" {
