@@ -102,3 +102,36 @@ output "msk_bootstrap_brokers_tls" {
   description = "MSK TLS bootstrap brokers (null when enable_msk is off). Feed into the CD repo's seldon-core-v2-runtime kafkaConfig.bootstrap."
   value       = var.enable_msk ? module.msk[0].bootstrap_brokers_tls : null
 }
+
+# ---------------------------------------------------------------------------
+# Inference ingress + AWS-managed observability.
+# ---------------------------------------------------------------------------
+output "inference_certificate_arn" {
+  description = "ACM cert ARN for the inference ALB (null when no domain configured). Usually NOT needed — the AWS LB Controller auto-discovers the cert by host; exposed for pinning/debug."
+  value       = var.inference_domain_name != "" ? aws_acm_certificate.inference[0].arn : null
+}
+
+output "inference_host" {
+  description = "Inference endpoint FQDN (the configured domain; null when unset). Used by scripts/sync-gitops-values.sh to enable the inference Ingress."
+  value       = var.inference_domain_name != "" ? var.inference_domain_name : null
+}
+
+output "amp_workspace_id" {
+  description = "Amazon Managed Prometheus workspace ID (null when disabled)."
+  value       = module.observability.amp_workspace_id
+}
+
+output "amp_remote_write_url" {
+  description = "AMP remote_write URL — set as prometheus.prometheusSpec.remoteWrite[].url in the CD repo's kube-prometheus-stack values (null when disabled)."
+  value       = module.observability.amp_remote_write_url
+}
+
+output "amp_query_url" {
+  description = "AMP query endpoint base URL (null when disabled)."
+  value       = module.observability.amp_query_url
+}
+
+output "grafana_workspace_endpoint" {
+  description = "Amazon Managed Grafana workspace endpoint (null when disabled). Requires SSO/SAML to log in."
+  value       = module.observability.grafana_workspace_endpoint
+}

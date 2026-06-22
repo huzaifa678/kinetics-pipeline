@@ -124,6 +124,28 @@ module "iam" {
   karpenter_interruption_queue_arn = module.karpenter.interruption_queue_arn
   ecr_repository_arn               = module.ecr.repository_arn
 
+  # Inference ingress + AWS-managed observability Pod Identity roles (gated).
+  amp_workspace_arn        = module.observability.amp_workspace_arn
+  enable_xray_tracing      = var.enable_xray_tracing
+  enable_aws_lb_controller = var.enable_aws_lb_controller
+  enable_external_dns      = var.enable_external_dns
+  route53_zone_id          = var.inference_route53_zone_id
+
+  tags = local.common_tags
+}
+
+# ---------------------------------------------------------------------------
+# AWS-managed observability (opt-in per env): AMP workspace (in-cluster
+# Prometheus remote_writes to it) + AMG workspace (replaces in-cluster Grafana).
+# Both internally count-gated; this module is inert when the flags are off.
+# ---------------------------------------------------------------------------
+module "observability" {
+  source = "./modules/observability"
+
+  name                      = local.name
+  enable_managed_prometheus = var.enable_managed_prometheus
+  enable_managed_grafana    = var.enable_managed_grafana
+
   tags = local.common_tags
 }
 
@@ -234,6 +256,19 @@ module "addons" {
   gitops_repo_url      = var.gitops_repo_url
   gitops_repo_revision = var.gitops_repo_revision
 
+  region                     = var.region
+  vpc_id                     = module.vpc.vpc_id
+  enable_aws_lb_controller   = var.enable_aws_lb_controller
+  enable_external_dns        = var.enable_external_dns
+  aws_lbc_role_arn           = module.iam.aws_lbc_role_arn
+  external_dns_role_arn      = module.iam.external_dns_role_arn
+  external_dns_domain_filter = var.inference_domain_name
+  amp_remote_write_role_arn  = module.iam.amp_remote_write_role_arn
+  otel_xray_role_arn         = module.iam.otel_xray_role_arn
+
+  aws_lb_controller_chart_version = var.aws_lb_controller_chart_version
+  external_dns_chart_version      = var.external_dns_chart_version
+
   tags = local.common_tags
 
   depends_on = [module.eks]
@@ -267,4 +302,46 @@ module "cicd" {
   state_bucket         = var.terraform_state_bucket
 
   tags = local.common_tags
+}
+
+# ---------------------------------------------------------------------------
+# Inference HTTPS endpoint: a public ACM cert (DNS-validated against the
+# provided Route53 zone) consumed by the internal ALB Ingress. The A-record to
+# the ALB is created by external-dns (the ALB name isn't known at apply time).
+# Gated on inference_domain_name — nothing is created when it's empty.
+# ---------------------------------------------------------------------------
+resource "aws_acm_certificate" "inference" {
+  count = var.inference_domain_name != "" ? 1 : 0
+
+  domain_name       = var.inference_domain_name
+  validation_method = "DNS"
+  tags              = local.common_tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "inference_cert_validation" {
+  for_each = var.inference_domain_name != "" ? {
+    for dvo in aws_acm_certificate.inference[0].domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      type   = dvo.resource_record_type
+      record = dvo.resource_record_value
+    }
+  } : {}
+
+  zone_id         = var.inference_route53_zone_id
+  name            = each.value.name
+  type            = each.value.type
+  records         = [each.value.record]
+  ttl             = 60
+  allow_overwrite = true
+}
+
+resource "aws_acm_certificate_validation" "inference" {
+  count = var.inference_domain_name != "" ? 1 : 0
+
+  certificate_arn         = aws_acm_certificate.inference[0].arn
+  validation_record_fqdns = [for r in aws_route53_record.inference_cert_validation : r.fqdn]
 }
