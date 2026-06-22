@@ -5,6 +5,18 @@ on:
     paths:
       - "terraform/**"
       - ".github/workflows/terraform-plan.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "tfvars profile to plan"
+        type: choice
+        default: dev
+        options:
+          - dev
+          - prod
+          - test
+          - novpn # dev + Client VPN OFF
+          - kafka # dev + MSK ON
 
 permissions:
   id-token: write # required for OIDC
@@ -19,6 +31,28 @@ jobs:
         working-directory: terraform
     steps:
       - uses: actions/checkout@v4
+
+      # On dispatch, resolve the profile -> -var-file chain (same mapping as
+      # terraform-apply). On PR, leave it empty to plan with variable defaults.
+      - name: Resolve tfvars profile
+        id: profile
+        env:
+          PROFILE: ${{ github.event.inputs.environment }}
+        run: |
+          files=""
+          case "$PROFILE" in
+            "")    : ;; # PR: variable defaults
+            dev)   files="-var-file=terraform.tfvars.dev" ;;
+            prod)  files="-var-file=terraform.tfvars.prod" ;;
+            test)  files="-var-file=terraform.tfvars.test" ;;
+            novpn) files="-var-file=terraform.tfvars.dev -var-file=terraform.tfvars.novpn" ;;
+            kafka) files="-var-file=terraform.tfvars.dev -var-file=terraform.tfvars.kafka" ;;
+            *) echo "::error::unknown profile '$PROFILE'"; exit 1 ;;
+          esac
+          for f in $(echo "$files" | tr ' ' '\n' | sed 's/-var-file=//'); do
+            [ -f "$f" ] || { echo "::error::missing var-file $f"; exit 1; }
+          done
+          echo "var_files=$files" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -37,10 +71,11 @@ jobs:
         id: plan
         run: |
           set +e
-          terraform plan -no-color -input=false -lock-timeout=120s -out=tfplan | tee plan.txt
+          terraform plan ${{ steps.profile.outputs.var_files }} -no-color -input=false -lock-timeout=120s -out=tfplan | tee plan.txt
           echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
@@ -55,6 +90,16 @@ jobs:
               issue_number: context.issue.number,
               body,
             });
+
+      - name: Plan to run summary (dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          {
+            echo "### Terraform Plan — profile \`${{ github.event.inputs.environment }}\`"
+            echo '```'
+            cat plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail if plan errored
         if: steps.plan.outputs.exitcode != '0'
