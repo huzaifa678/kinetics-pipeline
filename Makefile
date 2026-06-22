@@ -1,4 +1,4 @@
-.PHONY: tf-init tf-validate tf-plan validate-manifests validate lint image-build image-push teardown stage-data vpn
+.PHONY: tf-init tf-validate tf-plan validate-manifests validate lint image-build image-push teardown stage-data vpn sync-gitops-values
 
 TF_DIR := terraform
 
@@ -28,15 +28,15 @@ image-push:
 stage-data:
 	./scripts/stage-data.sh sync
 
-## Connect AWS Client VPN + split-DNS for the private EKS endpoint, point kubectl
 vpn:
 	./scripts/vpn-connect.sh
 
-## Clean teardown: drain Karpenter nodes, empty S3, unfence ECR, then destroy
+sync-gitops-values:
+	./scripts/sync-gitops-values.sh
+
 teardown:
 	./scripts/teardown.sh
 
-## Everything CI should gate on
 validate: tf-validate validate-manifests
 
 lint: validate
