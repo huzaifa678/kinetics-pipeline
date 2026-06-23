@@ -48,6 +48,32 @@ variable "broker_ebs_volume_size" {
   default     = 20
 }
 
+variable "client_authentication" {
+  description = <<-EOT
+    Client auth mode. TLS in-transit is always on.
+      * unauthenticated — dev default (SG-locked only).
+      * sasl_scram      — SCRAM-SHA-512 user/pass (generated, stored in Secrets
+                          Manager under a CMK, associated to the cluster). Best
+                          for Seldon's librdkafka client. PROD default.
+      * iam             — SASL/IAM (port 9098); clients authenticate with an IAM
+                          role (needs kafka-cluster:* perms — not created here).
+    mTLS (certificate auth) needs ACM Private CA (~$400/mo) and is intentionally
+    not wired.
+  EOT
+  type        = string
+  default     = "unauthenticated"
+  validation {
+    condition     = contains(["unauthenticated", "sasl_scram", "iam"], var.client_authentication)
+    error_message = "client_authentication must be one of: unauthenticated, sasl_scram, iam."
+  }
+}
+
+variable "scram_username" {
+  description = "SASL/SCRAM username (sasl_scram mode). The password is generated and stored in Secrets Manager."
+  type        = string
+  default     = "seldon"
+}
+
 variable "tags" {
   description = "Tags applied to all resources."
   type        = map(string)
