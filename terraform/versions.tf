@@ -32,6 +32,11 @@ terraform {
       source  = "hashicorp/tls"
       version = ">= 4.0.0"
     }
+    # SASL/SCRAM password generation for the prod MSK posture.
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.5.0"
+    }
   }
 
   backend "s3" {
