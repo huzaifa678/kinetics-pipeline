@@ -25,10 +25,15 @@ vpn_saml_application_arn       = "arn:aws:sso::533267178572:application/ssoins-7
 vpn_saml_assignment_user_names = ["HuzaifaGill"]
 
 # --- MSK (Kafka) — ON for Seldon Core v2 Pipelines / async dataflow ---
-enable_msk                 = true
-kafka_version              = "3.6.0"
-msk_broker_instance_type   = "kafka.t3.small"
-msk_broker_ebs_volume_size = 20
+# Prod hardens client auth to SASL/SCRAM (TLS in-transit always on): a generated
+# user/pass lands in Secrets Manager under a CMK + is associated to the cluster.
+# Bridge `terraform output -raw scram_secret_arn` to a k8s Secret (External
+# Secrets Operator) and point Seldon at `bootstrap_brokers_sasl_scram`.
+enable_msk                = true
+kafka_version             = "3.6.0"
+msk_broker_instance_type  = "kafka.m5.large" # SCRAM/prod: t3.small is dev-only; m5.large is the prod floor
+msk_broker_ebs_volume_size = 100
+msk_client_authentication = "sasl_scram"
 
 # --- HyperPod GPU (autoscaling, scale-to-zero) ---
 gpu_instance_type      = "ml.g5.12xlarge"
