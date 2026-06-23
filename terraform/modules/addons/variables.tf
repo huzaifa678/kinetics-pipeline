@@ -8,6 +8,12 @@ variable "cluster_name" {
   type        = string
 }
 
+variable "environment" {
+  description = "Environment name stamped on the ArgoCD in-cluster Secret's `environment` label — the ApplicationSet clusters generator uses it to pick the gitops/environments/<env> overlay."
+  type        = string
+  default     = "dev"
+}
+
 variable "ack_sagemaker_role_arn" {
   description = "Pod Identity role ARN for the ACK SageMaker controller."
   type        = string
