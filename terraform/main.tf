@@ -110,6 +110,7 @@ module "msk" {
   kafka_version          = var.kafka_version
   broker_instance_type   = var.msk_broker_instance_type
   broker_ebs_volume_size = var.msk_broker_ebs_volume_size
+  client_authentication  = var.msk_client_authentication
 
   tags = local.common_tags
 }
