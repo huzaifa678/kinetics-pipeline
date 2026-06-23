@@ -130,6 +130,33 @@ resource "helm_release" "argocd" {
 }
 
 
+# Declarative in-cluster registration carrying the `environment` label. The
+# ApplicationSet's clusters generator reads this label to pick the
+# gitops/environments/<env> overlay, so each cluster self-selects its env from
+# var.environment — no CI write-back, true multi-cluster. Naming it "in-cluster"
+# + server=https://kubernetes.default.svc relabels ArgoCD's local cluster.
+resource "kubernetes_secret" "argocd_incluster" {
+  count = var.enable_argocd ? 1 : 0
+
+  metadata {
+    name      = "in-cluster"
+    namespace = "argocd"
+    labels = {
+      "argocd.argoproj.io/secret-type" = "cluster"
+      "environment"                    = var.environment
+    }
+  }
+
+  data = {
+    name   = "in-cluster"
+    server = "https://kubernetes.default.svc"
+    config = jsonencode({ tlsClientConfig = { insecure = false } })
+  }
+
+  type       = "Opaque"
+  depends_on = [helm_release.argocd]
+}
+
 # Root app-of-apps Application, deployed declaratively via the argocd-apps Helm
 # chart. This replaces the earlier `terraform_data` + `local-exec` that shelled
 # out to `aws eks update-kubeconfig | kubectl apply`: the helm provider talks to
