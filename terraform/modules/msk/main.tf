@@ -1,18 +1,7 @@
-# ---------------------------------------------------------------------------
-# Amazon MSK (provisioned) — Kafka backend for Seldon Core v2 Pipelines / async
-# dataflow. Only needed when Seldon Pipelines are enabled; the sync Model + A/B
-# Experiment path does NOT use Kafka, so the whole module is behind enable_msk
-# (count) at the root and defaults off.
-#
-# Dev posture: TLS in transit, UNAUTHENTICATED client auth, locked to the VPC by
-# the security group. No SASL/SCRAM => no Secrets-Manager-to-k8s credential
-# bridge (no External Secrets Operator), so Seldon connects with plain SSL +
-# the default CA bundle. Harden to SASL/SCRAM or IAM for prod.
-# ---------------------------------------------------------------------------
-
 locals {
-  # number_of_broker_nodes must be a multiple of the client-subnet (AZ) count.
-  broker_count = var.broker_count != null ? var.broker_count : length(var.private_subnet_ids)
+=  broker_count = var.broker_count != null ? var.broker_count : length(var.private_subnet_ids)
+  scram        = var.client_authentication == "sasl_scram"
+  iam          = var.client_authentication == "iam"
 }
 
 resource "aws_security_group" "msk" {
@@ -22,8 +11,6 @@ resource "aws_security_group" "msk" {
   tags        = merge(var.tags, { Name = "${var.name}-msk" })
 }
 
-# Intra-VPC only (matches the storage/FSx SG style). Covers the broker ports
-# (9092 plaintext, 9094 TLS, 9098 IAM) + inter-broker traffic.
 resource "aws_vpc_security_group_ingress_rule" "msk_vpc" {
   security_group_id = aws_security_group.msk.id
   cidr_ipv4         = var.vpc_cidr
@@ -54,9 +41,17 @@ resource "aws_msk_cluster" "this" {
     }
   }
 
-  # TLS in transit, no client auth — see header. Seldon connects over SSL.
+  # See header. unauthenticated for dev; SASL (scram or iam) for prod.
   client_authentication {
-    unauthenticated = true
+    unauthenticated = var.client_authentication == "unauthenticated"
+
+    dynamic "sasl" {
+      for_each = local.scram || local.iam ? [1] : []
+      content {
+        scram = local.scram
+        iam   = local.iam
+      }
+    }
   }
 
   encryption_info {
@@ -67,4 +62,51 @@ resource "aws_msk_cluster" "this" {
   }
 
   tags = var.tags
+}
+
+
+resource "aws_kms_key" "scram" {
+  count = local.scram ? 1 : 0
+
+  description         = "${var.name} MSK SASL/SCRAM secret encryption"
+  enable_key_rotation = true
+  tags                = var.tags
+}
+
+resource "aws_kms_alias" "scram" {
+  count = local.scram ? 1 : 0
+
+  name          = "alias/${var.name}-msk-scram"
+  target_key_id = aws_kms_key.scram[0].key_id
+}
+
+resource "random_password" "scram" {
+  count = local.scram ? 1 : 0
+
+  length  = 32
+  special = false # keep it broker/CLI-safe
+}
+
+resource "aws_secretsmanager_secret" "scram" {
+  count = local.scram ? 1 : 0
+
+  name       = "AmazonMSK_${var.name}_scram"
+  kms_key_id = aws_kms_key.scram[0].key_id
+  tags       = var.tags
+}
+
+resource "aws_secretsmanager_secret_version" "scram" {
+  count = local.scram ? 1 : 0
+
+  secret_id     = aws_secretsmanager_secret.scram[0].id
+  secret_string = jsonencode({ username = var.scram_username, password = random_password.scram[0].result })
+}
+
+resource "aws_msk_scram_secret_association" "this" {
+  count = local.scram ? 1 : 0
+
+  cluster_arn     = aws_msk_cluster.this.arn
+  secret_arn_list = [aws_secretsmanager_secret.scram[0].arn]
+
+  depends_on = [aws_secretsmanager_secret_version.scram]
 }
