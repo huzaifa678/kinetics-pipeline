@@ -134,6 +134,12 @@ variable "msk_broker_ebs_volume_size" {
   default     = 20
 }
 
+variable "msk_client_authentication" {
+  description = "MSK client auth: unauthenticated (dev) | sasl_scram (prod) | iam. TLS in-transit is always on. tfvars.prod sets sasl_scram."
+  type        = string
+  default     = "unauthenticated"
+}
+
 variable "vpn_saml_metadata_file" {
   description = <<-EOT
     Path to the SAML IdP metadata XML for the Client VPN app in IAM Identity
