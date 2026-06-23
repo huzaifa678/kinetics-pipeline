@@ -241,6 +241,7 @@ module "addons" {
 
   name         = local.name
   cluster_name = module.eks.cluster_name
+  environment  = var.environment
 
   ack_sagemaker_role_arn = module.iam.ack_sagemaker_role_arn
   karpenter_role_arn     = module.iam.karpenter_role_arn
