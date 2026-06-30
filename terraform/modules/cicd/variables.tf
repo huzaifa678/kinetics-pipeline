@@ -61,6 +61,18 @@ variable "apply_managed_policy" {
   default     = "AdministratorAccess"
 }
 
+variable "frontend_bucket_arn" {
+  description = "SPA S3 bucket ARN — gates the frontend-deploy role (created only when non-empty)."
+  type        = string
+  default     = ""
+}
+
+variable "frontend_distribution_arn" {
+  description = "CloudFront distribution ARN the deploy role may invalidate. Empty = all."
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Tags to apply."
   type        = map(string)

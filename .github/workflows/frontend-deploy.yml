@@ -1,0 +1,58 @@
+name: frontend-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC
+  contents: read
+
+concurrency:
+  group: frontend-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Build
+        env:
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+          VITE_COGNITO_AUTHORITY: ${{ vars.VITE_COGNITO_AUTHORITY }}
+          VITE_COGNITO_CLIENT_ID: ${{ vars.VITE_COGNITO_CLIENT_ID }}
+          VITE_COGNITO_HOSTED_UI: ${{ vars.VITE_COGNITO_HOSTED_UI }}
+          VITE_REDIRECT_URI: ${{ vars.VITE_REDIRECT_URI }}
+        run: npm run build
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_FRONTEND_DEPLOY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Sync to S3 + invalidate CloudFront
+        env:
+          BUCKET: ${{ vars.SPA_BUCKET }}
+          DIST_ID: ${{ vars.CLOUDFRONT_DIST_ID }}
+        run: |
+          aws s3 sync dist/ "s3://${BUCKET}/" --delete
+          aws cloudfront create-invalidation --distribution-id "${DIST_ID}" --paths '/*'

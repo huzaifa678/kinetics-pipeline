@@ -112,8 +112,13 @@ output "inference_certificate_arn" {
 }
 
 output "inference_host" {
-  description = "Inference endpoint FQDN (the configured domain; null when unset). Used by scripts/sync-gitops-values.sh to enable the inference Ingress."
+  description = "Internal inference endpoint FQDN (the configured domain; null when unset). Used by scripts/sync-gitops-values.sh to enable the inference Ingress."
   value       = var.inference_domain_name != "" ? var.inference_domain_name : null
+}
+
+output "inference_api_host" {
+  description = "Public inference API FQDN for prod (api_domain_name; null when unset)."
+  value       = var.api_domain_name != "" ? var.api_domain_name : null
 }
 
 output "amp_workspace_id" {
@@ -134,4 +139,58 @@ output "amp_query_url" {
 output "grafana_workspace_endpoint" {
   description = "Amazon Managed Grafana workspace endpoint (null when disabled). Requires SSO/SAML to log in."
   value       = module.observability.grafana_workspace_endpoint
+}
+
+# ---------------------------------------------------------------------------
+# Public inference frontend (Cognito + SPA + WAF).
+# ---------------------------------------------------------------------------
+output "cognito_issuer" {
+  description = "Cognito JWT issuer — set COGNITO_ISSUER on the edge + VITE_COGNITO_AUTHORITY in the SPA (null when disabled)."
+  value       = var.enable_cognito ? module.cognito[0].issuer : null
+}
+
+output "cognito_hosted_ui_url" {
+  description = "Cognito Hosted-UI base URL (null when disabled)."
+  value       = var.enable_cognito ? module.cognito[0].hosted_ui_url : null
+}
+
+output "cognito_spa_client_id" {
+  description = "Public SPA app-client ID — VITE_COGNITO_CLIENT_ID (null when disabled)."
+  value       = var.enable_cognito ? module.cognito[0].spa_client_id : null
+}
+
+output "cognito_machine_client_id" {
+  description = "Machine (client-credentials) app-client ID (null when disabled)."
+  value       = var.enable_cognito ? module.cognito[0].machine_client_id : null
+}
+
+output "cognito_machine_client_secret" {
+  description = "Machine app-client secret (sensitive; null when disabled)."
+  value       = var.enable_cognito ? module.cognito[0].machine_client_secret : null
+  sensitive   = true
+}
+
+output "spa_url" {
+  description = "Public SPA URL (null when the frontend is disabled)."
+  value       = var.enable_frontend ? module.frontend[0].spa_url : null
+}
+
+output "spa_bucket" {
+  description = "S3 bucket CI syncs the SPA build to (null when disabled)."
+  value       = var.enable_frontend ? module.frontend[0].spa_bucket : null
+}
+
+output "cloudfront_distribution_id" {
+  description = "SPA CloudFront distribution ID for cache invalidation (null when disabled)."
+  value       = var.enable_frontend ? module.frontend[0].cloudfront_distribution_id : null
+}
+
+output "frontend_deploy_role_arn" {
+  description = "GitHub Actions role for frontend-deploy.yml (AWS_ROLE_FRONTEND_DEPLOY)."
+  value       = var.enable_github_oidc ? module.cicd[0].frontend_deploy_role_arn : null
+}
+
+output "inference_api_waf_arn" {
+  description = "Regional WAF ACL ARN for the public inference ALB — set as the Ingress wafv2-acl-arn annotation (null when disabled)."
+  value       = var.enable_waf && var.api_domain_name != "" ? aws_wafv2_web_acl.inference_api[0].arn : null
 }

@@ -73,6 +73,18 @@ enable_managed_prometheus = true
 enable_managed_grafana    = true
 enable_xray_tracing       = true
 
+# --- Public inference frontend (React SPA + Cognito + WAF) ---
+# Turning this on makes inference PUBLIC (api_domain_name) instead of VPN-only —
+# WAF + Cognito JWT are the gate. Fill the domains/zone before apply.
+enable_cognito           = true
+enable_frontend          = true
+enable_waf               = true
+frontend_domain_name     = "" # OPTIONAL: blank ⇒ SPA served on the *.cloudfront.net URL (no DNS)
+api_domain_name          = "" # for a custom HTTPS API host (needs a domain); blank keeps inference internal
+frontend_route53_zone_id = "" # only needed if frontend_domain_name/api_domain_name are set
+cognito_hosted_ui_prefix = "" # REQUIRED: globally-unique prefix, e.g. "kinetics-prod-auth"
+# cognito_extra_callback_urls = ["http://localhost:5173/"]  # for local SPA dev
+
 # COST while up (us-east-1, GPUs idle at 0): idle baseline ~$1.25/hr (EKS + MLflow
 # + FSx + system nodes + NAT + VPN) + MSK ~$0.13/hr + ALB ~$0.03/hr; AMP usage-based
 # (few $/mo ephemeral, $40-100+/mo if 24/7); AMG flat ~$9/mo. A GPU run on

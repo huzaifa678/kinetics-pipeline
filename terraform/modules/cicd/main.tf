@@ -172,4 +172,41 @@ resource "aws_iam_role_policy_attachment" "tf_apply_admin" {
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/${var.apply_managed_policy}"
 }
 
+# ===========================================================================
+# Role 4: frontend deploy (frontend-deploy.yml). Syncs the SPA build to S3 and
+# invalidates CloudFront. Created only when the frontend bucket ARN is passed
+# (i.e. enable_frontend). Trusted on the same subjects as apply.
+# ===========================================================================
+resource "aws_iam_role" "frontend_deploy" {
+  count = var.frontend_bucket_arn != "" ? 1 : 0
+
+  name               = "${var.name}-gha-frontend-deploy"
+  assume_role_policy = data.aws_iam_policy_document.assume_main.json
+  tags               = var.tags
+}
+
+data "aws_iam_policy_document" "frontend_deploy" {
+  count = var.frontend_bucket_arn != "" ? 1 : 0
+
+  statement {
+    sid       = "SpaBucketSync"
+    actions   = ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetObject"]
+    resources = [var.frontend_bucket_arn, "${var.frontend_bucket_arn}/*"]
+  }
+
+  statement {
+    sid       = "CloudFrontInvalidate"
+    actions   = ["cloudfront:CreateInvalidation", "cloudfront:GetInvalidation"]
+    resources = var.frontend_distribution_arn != "" ? [var.frontend_distribution_arn] : ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "frontend_deploy" {
+  count = var.frontend_bucket_arn != "" ? 1 : 0
+
+  name   = "${var.name}-gha-frontend-deploy"
+  role   = aws_iam_role.frontend_deploy[0].id
+  policy = data.aws_iam_policy_document.frontend_deploy[0].json
+}
+
 data "aws_partition" "current" {}
