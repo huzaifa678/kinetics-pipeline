@@ -35,15 +35,36 @@ else
 fi
 
 # --- Inference endpoint ---------------------------------------------------
+# Prod: public api host + WAF + Swagger off + CORS + Cognito JWT.
+# Dev:  internal ALB at inference_host, docs on, no auth.
+API_HOST="$(tfout inference_api_host)"
 INF_HOST="$(tfout inference_host)"
-if [ -n "$INF_HOST" ]; then
+if [ -n "$API_HOST" ]; then
   [ -f "$INF_VALUES" ] || { echo "ERROR: $INF_VALUES missing" >&2; exit 1; }
-  echo "==> inference-service: ingress.enabled=true host=$INF_HOST"
+  WAF_ARN="$(tfout inference_api_waf_arn)"
+  SPA_URL="$(tfout spa_url)"
+  COG_ISSUER="$(tfout cognito_issuer)"
+  AUDIENCE="$(tfout cognito_spa_client_id),$(tfout cognito_machine_client_id)"
+  echo "==> inference-service: PROD public ingress at $API_HOST (WAF + Cognito, docs off)"
+  H="$API_HOST" W="$WAF_ARN" C="$SPA_URL" I="$COG_ISSUER" A="$AUDIENCE" yq -i '
+    .ingress.enabled = true
+    | .ingress.scheme = "internet-facing"
+    | .ingress.host = strenv(H)
+    | .ingress.wafAclArn = strenv(W)
+    | .app.enableDocs = "false"
+    | .app.corsAllowOrigins = strenv(C)
+    | .app.cognito.issuer = strenv(I)
+    | .app.cognito.audience = strenv(A)' "$INF_VALUES"
+  changed=1
+elif [ -n "$INF_HOST" ]; then
+  [ -f "$INF_VALUES" ] || { echo "ERROR: $INF_VALUES missing" >&2; exit 1; }
+  echo "==> inference-service: internal ingress.enabled=true host=$INF_HOST"
   INF_HOST="$INF_HOST" yq -i '.ingress.enabled = true
+    | .ingress.scheme = "internal"
     | .ingress.host = strenv(INF_HOST)' "$INF_VALUES"
   changed=1
 else
-  echo "==> No inference_domain_name set — leaving inference ingress disabled"
+  echo "==> No inference domain set — leaving inference ingress disabled"
 fi
 
 if [ "$changed" = 0 ]; then
