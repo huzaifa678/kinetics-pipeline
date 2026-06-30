@@ -277,6 +277,41 @@ def test_checkpoint_manager_uses_injected_storage(tmp_path=None):
     assert fake.uploaded and fake.uploaded[0][1] == "s3://bucket/run/latest.pt"
 
 
+def test_checkpoint_manager_fsx_dir_and_async_upload(tmp_path=None):
+    """checkpoint_dir (FSx) is honored and async_upload mirrors after flush()."""
+    import os as _os
+    import tempfile
+
+    class FakeStorage:
+        def __init__(self):
+            self.uploaded = []
+
+        def upload(self, local_path, uri):
+            self.uploaded.append((local_path, uri))
+
+        def download(self, uri, local_path):
+            return False
+
+    base = str(tmp_path if tmp_path is not None else tempfile.mkdtemp())
+    ckpt_dir = _os.path.join(base, "fsx", "checkpoints")  # stand-in for /data/checkpoints
+    fake = FakeStorage()
+    cm = CheckpointManager(
+        output_dir=base,
+        s3_prefix="s3://bucket/run/",
+        storage=fake,
+        is_main=True,
+        checkpoint_dir=ckpt_dir,
+        async_upload=True,
+    )
+    cm.save({"epoch": 1})
+    # Written to the FSx dir, not output_dir.
+    assert _os.path.exists(_os.path.join(ckpt_dir, "latest.pt"))
+    assert cm.latest_path == _os.path.join(ckpt_dir, "latest.pt")
+    cm.flush()  # join the background upload
+    assert fake.uploaded and fake.uploaded[0][1] == "s3://bucket/run/latest.pt"
+    assert cm.load_latest()["epoch"] == 1
+
+
 def test_setup_distributed_single_process(monkeypatch=None):
     # No torchrun env -> single-process CPU context, no process group.
     for var in ("WORLD_SIZE", "RANK", "LOCAL_RANK"):

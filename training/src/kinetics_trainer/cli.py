@@ -54,7 +54,12 @@ def _run(cfg: Config, ctx: DistContext) -> None:
     datamodule = KineticsDataModule(cfg, ctx)
     storage = S3Storage() if cfg.checkpoint_s3 else NullStorage()
     checkpointer = CheckpointManager(
-        cfg.output_dir, cfg.checkpoint_s3, storage=storage, is_main=ctx.is_main
+        cfg.output_dir,
+        cfg.checkpoint_s3,
+        storage=storage,
+        is_main=ctx.is_main,
+        checkpoint_dir=cfg.checkpoint_dir,
+        async_upload=cfg.checkpoint_async_upload,
     )
     tracker = build_tracker(cfg, enabled=ctx.is_main)
 

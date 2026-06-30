@@ -30,7 +30,6 @@ from .tracking import ExperimentTracker
 
 log = get_logger(__name__)
 
-
 class Trainer:
     """Orchestrates the fit/evaluate loop over its injected collaborators."""
 
@@ -279,7 +278,9 @@ class Trainer:
     def _log_final_artifacts(self) -> None:
         if not self.ctx.is_main:
             return
-        latest = os.path.join(self.cfg.output_dir, "latest.pt")
+        # Ensure any async S3 mirror has landed before logging lineage artifacts.
+        self.checkpointer.flush()
+        latest = self.checkpointer.latest_path
         if os.path.exists(latest):
             self.tracker.log_artifact(latest)
             self.tracker.log_artifact(os.path.join(self.cfg.output_dir, "label_map.json"))
