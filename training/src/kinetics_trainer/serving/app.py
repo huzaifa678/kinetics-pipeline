@@ -31,13 +31,15 @@ import time
 from contextlib import asynccontextmanager
 
 import torch
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from ..observability import get_logger, init_tracer
 from ..predictor import Predictor, PredictorLike
 from . import metrics
+from .auth import require_jwt
 from .remote_predictor import RemotePredictor
 from .schemas import HealthResponse, PredictRequest, PredictResponse
 
@@ -74,7 +76,30 @@ async def lifespan(app: FastAPI):  # noqa: ANN201 (FastAPI lifespan signature)
     _state["predictor"] = None
 
 
-app = FastAPI(title="Kinetics Inference API", version="1.0.0", lifespan=lifespan)
+# Swagger/OpenAPI is OFF unless ENABLE_DOCS is truthy — prod sets it false so the
+# public endpoint never exposes the schema/try-it console.
+_enable_docs = os.environ.get("ENABLE_DOCS", "true").lower() in {"1", "true", "yes"}
+
+app = FastAPI(
+    title="Kinetics Inference API",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _enable_docs else None,
+    redoc_url="/redoc" if _enable_docs else None,
+    openapi_url="/openapi.json" if _enable_docs else None,
+)
+
+
+_cors_origins = [
+    o.strip() for o in os.environ.get("CORS_ALLOW_ORIGINS", "").split(",") if o.strip()
+]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 
 @app.get("/healthz", response_model=HealthResponse)
@@ -94,7 +119,7 @@ def prometheus_metrics() -> Response:
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-@app.post("/predict", response_model=PredictResponse)
+@app.post("/predict", response_model=PredictResponse, dependencies=[Depends(require_jwt)])
 def predict(req: PredictRequest, request: Request, response: Response) -> PredictResponse:
     predictor = _state["predictor"]
     if predictor is None:
