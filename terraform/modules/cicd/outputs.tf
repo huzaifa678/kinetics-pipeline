@@ -17,3 +17,8 @@ output "terraform_apply_role_arn" {
   description = "Role ARN for terraform-apply.yml (AWS_ROLE_TF_APPLY)."
   value       = aws_iam_role.tf_apply.arn
 }
+
+output "frontend_deploy_role_arn" {
+  description = "Role ARN for frontend-deploy.yml (AWS_ROLE_FRONTEND_DEPLOY); null when the frontend isn't enabled."
+  value       = var.frontend_bucket_arn != "" ? aws_iam_role.frontend_deploy[0].arn : null
+}
