@@ -431,3 +431,56 @@ variable "enable_xray_tracing" {
   type        = bool
   default     = false
 }
+
+# ---------------------------------------------------------------------------
+# Public inference frontend: React SPA (S3+CloudFront) + Cognito auth + WAF.
+# Prod-only; everything off/empty by default. Turning these on shifts the
+# inference posture from VPN-internal to PUBLIC — gate it with WAF + JWT.
+# ---------------------------------------------------------------------------
+variable "enable_cognito" {
+  description = "Create a Cognito user pool (SPA + machine app clients) for inference auth. The edge verifies the JWT when COGNITO_ISSUER is set."
+  type        = bool
+  default     = false
+}
+
+variable "enable_frontend" {
+  description = "Host the React SPA on S3 + CloudFront (+ ACM/Route53). Requires frontend_domain_name + frontend_route53_zone_id."
+  type        = bool
+  default     = false
+}
+
+variable "enable_waf" {
+  description = "Attach WAFv2 (managed common rules + rate limit) to the SPA CloudFront and the public inference ALB."
+  type        = bool
+  default     = false
+}
+
+variable "frontend_domain_name" {
+  description = "FQDN the SPA is served at (e.g. app.example.com)."
+  type        = string
+  default     = ""
+}
+
+variable "api_domain_name" {
+  description = "Public FQDN for the inference API ALB in prod (e.g. api.example.com). Empty keeps inference internal."
+  type        = string
+  default     = ""
+}
+
+variable "frontend_route53_zone_id" {
+  description = "Route53 hosted zone for the SPA ACM cert + alias. Required when enable_frontend."
+  type        = string
+  default     = ""
+}
+
+variable "cognito_hosted_ui_prefix" {
+  description = "Cognito Hosted-UI domain prefix (globally unique in-region). Required when enable_cognito."
+  type        = string
+  default     = ""
+}
+
+variable "cognito_extra_callback_urls" {
+  description = "Extra OAuth callback/logout URLs beyond https://<frontend_domain_name>/ (e.g. http://localhost:5173/ for local dev)."
+  type        = list(string)
+  default     = []
+}
