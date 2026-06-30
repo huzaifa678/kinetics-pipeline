@@ -6,6 +6,13 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }
+
+  # SPA URL (custom domain or the default CloudFront URL) → Cognito callback/logout.
+  spa_url = var.enable_frontend ? one(module.frontend[*].spa_url) : ""
+  cognito_callback_urls = distinct(concat(
+    local.spa_url != "" ? ["${local.spa_url}/"] : [],
+    var.cognito_extra_callback_urls,
+  ))
 }
 
 # ---------------------------------------------------------------------------
@@ -146,6 +153,94 @@ module "observability" {
   name                      = local.name
   enable_managed_prometheus = var.enable_managed_prometheus
   enable_managed_grafana    = var.enable_managed_grafana
+
+  tags = local.common_tags
+}
+
+# ---------------------------------------------------------------------------
+# Public inference frontend: Cognito (auth) + React SPA on S3/CloudFront, plus
+# an optional regional WAF for the public inference ALB. Prod-only (gated).
+# ---------------------------------------------------------------------------
+module "cognito" {
+  source = "./modules/cognito"
+  count  = var.enable_cognito ? 1 : 0
+
+  name                    = local.name
+  hosted_ui_domain_prefix = var.cognito_hosted_ui_prefix
+  callback_urls           = local.cognito_callback_urls
+  logout_urls             = local.cognito_callback_urls
+
+  tags = local.common_tags
+}
+
+module "frontend" {
+  source = "./modules/frontend"
+  count  = var.enable_frontend ? 1 : 0
+
+  name            = local.name
+  domain_name     = var.frontend_domain_name
+  route53_zone_id = var.frontend_route53_zone_id
+  enable_waf      = var.enable_waf
+
+  tags = local.common_tags
+}
+
+# Regional WAFv2 for the public inference ALB (attached via the Ingress
+# `wafv2-acl-arn` annotation by sync-gitops-values for prod).
+resource "aws_wafv2_web_acl" "inference_api" {
+  count = var.enable_waf && var.api_domain_name != "" ? 1 : 0
+
+  name        = "${local.name}-api-waf"
+  scope       = "REGIONAL"
+  description = "${local.name} public inference ALB — managed common rules + rate limit"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "AWSManagedCommon"
+    priority = 1
+    override_action {
+      none {}
+    }
+    statement {
+      managed_rule_group_statement {
+        vendor_name = "AWS"
+        name        = "AWSManagedRulesCommonRuleSet"
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${local.name}-api-common"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "RateLimit"
+    priority = 2
+    action {
+      block {}
+    }
+    statement {
+      rate_based_statement {
+        limit              = 2000
+        aggregate_key_type = "IP"
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${local.name}-api-ratelimit"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${local.name}-api-waf"
+    sampled_requests_enabled   = true
+  }
 
   tags = local.common_tags
 }
@@ -302,6 +397,10 @@ module "cicd" {
   oidc_provider_arn    = var.github_oidc_provider_arn
   ecr_repository_arn   = module.ecr.repository_arn
   state_bucket         = var.terraform_state_bucket
+
+  # SPA deploy role (created only when the frontend is enabled).
+  frontend_bucket_arn       = var.enable_frontend ? module.frontend[0].spa_bucket_arn : ""
+  frontend_distribution_arn = var.enable_frontend ? module.frontend[0].cloudfront_distribution_arn : ""
 
   tags = local.common_tags
 }
