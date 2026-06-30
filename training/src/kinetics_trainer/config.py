@@ -55,6 +55,11 @@ class Config:
     checkpoint_every_steps: int
     resume: bool
     output_dir: str
+    # Where checkpoints are written. Empty = output_dir; set to the FSx mount
+    # (e.g. /data/checkpoints) for fast shared writes under HyperPod auto-resume.
+    checkpoint_dir: str
+    # Mirror to S3 on a background thread so the FSx write doesn't block the step.
+    checkpoint_async_upload: bool
     log_every: int
     # data source: "manifest" decodes mp4s per epoch; "shards" streams pre-decoded
     # WebDataset tars from kinetics_trainer.etl (train_manifest still supplies the
@@ -111,6 +116,8 @@ class Config:
             checkpoint_every_steps=0,
             resume=False,
             output_dir="",
+            checkpoint_dir="",
+            checkpoint_async_upload=False,
             log_every=0,
         )
 
@@ -169,6 +176,20 @@ def parse_args(argv: list[str] | None = None) -> Config:
     p.add_argument("--checkpoint-every-steps", type=int, default=200)
     p.add_argument("--resume", type=str2bool, default=True)
     p.add_argument("--output-dir", default="/tmp/kinetics-output")
+    p.add_argument(
+        "--checkpoint-dir",
+        default="",
+        help=(
+            "Local checkpoint dir; empty = output_dir. Point at the FSx mount "
+            "(e.g. /data/checkpoints) for fast shared writes under HyperPod auto-resume."
+        ),
+    )
+    p.add_argument(
+        "--checkpoint-async-upload",
+        type=str2bool,
+        default=False,
+        help="Mirror checkpoints to S3 on a background thread (don't block the step).",
+    )
     p.add_argument("--log-every", type=int, default=20)
 
     a = p.parse_args(argv)
@@ -207,5 +228,7 @@ def parse_args(argv: list[str] | None = None) -> Config:
         checkpoint_every_steps=a.checkpoint_every_steps,
         resume=a.resume,
         output_dir=a.output_dir,
+        checkpoint_dir=a.checkpoint_dir,
+        checkpoint_async_upload=a.checkpoint_async_upload,
         log_every=a.log_every,
     )
