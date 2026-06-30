@@ -1,5 +1,6 @@
 locals {
-=  broker_count = var.broker_count != null ? var.broker_count : length(var.private_subnet_ids)
+  # number_of_broker_nodes must be a multiple of the client-subnet (AZ) count.
+  broker_count = var.broker_count != null ? var.broker_count : length(var.private_subnet_ids)
   scram        = var.client_authentication == "sasl_scram"
   iam          = var.client_authentication == "iam"
 }
