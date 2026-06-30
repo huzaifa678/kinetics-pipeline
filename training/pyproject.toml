@@ -37,6 +37,9 @@ serving = [
     "pydantic>=2.6",
     # httpx: the edge calls the Seldon model endpoint (kinetics_trainer.serving.remote_predictor).
     "httpx>=0.27",
+    # Cognito JWT verification on /predict (kinetics_trainer.serving.auth); no-op
+    # unless COGNITO_ISSUER is set, but the wheel must be present in the image.
+    "pyjwt[crypto]>=2.8",
 ]
 
 # Seldon Core v2 custom MLServer runtime (kinetics_trainer.serving.seldon_runtime).
