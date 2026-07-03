@@ -1,31 +1,47 @@
-# CPU inference image for the FastAPI serving backend (kinetics_trainer.serving).
-#
-# Separate from the CUDA training Dockerfile: inference here is CPU-friendly and a
-# slim base keeps the image small enough for local docker-compose. For GPU
-# inference, swap the base + the torch wheels for a CUDA build.
-FROM python:3.11-slim AS runtime
+FROM python:3.11-slim AS builder
 
-# ffmpeg: codecs PyAV needs to decode mp4 clips for the /predict video_b64 path.
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PATH="/opt/venv/bin:$PATH"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg && rm -rf /var/lib/apt/lists/*
+        build-essential && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+RUN python -m venv /opt/venv && pip install --upgrade pip
 
-# CPU torch/torchvision. The training image gets these from its CUDA base and the
-# package declares neither (see pyproject), so install them explicitly here.
-RUN pip install --no-cache-dir \
-        --index-url https://download.pytorch.org/whl/cpu \
+# CPU torch/torchvision (the package declares neither — see pyproject), then the
+# package + serving extra (fastapi, uvicorn, prometheus-client, pydantic).
+RUN pip install --index-url https://download.pytorch.org/whl/cpu \
         torch==2.3.1 torchvision==0.18.1
 
-# Install the package + serving extra (fastapi, uvicorn, prometheus-client, pydantic).
+WORKDIR /app
 COPY pyproject.toml ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir ".[serving]"
+RUN pip install ".[serving]"
 
-ENV MODEL_DIR=/opt/ml/model \
+# --------------------------------------------------------------------------
+FROM python:3.11-slim AS runtime
+
+# PyAV bundles ffmpeg in its wheel, so no system ffmpeg is needed for the
+# /predict video_b64 decode path.
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    MODEL_DIR=/opt/ml/model \
     OTEL_SERVICE_NAME=kinetics-inference \
     PORT=8080
+
+COPY --from=builder /opt/venv /opt/venv
+
+# Non-root runtime user; the model dir is owned by it (mounted read-only in prod).
+RUN useradd --create-home --uid 10001 app \
+    && mkdir -p /opt/ml/model && chown -R app:app /opt/ml/model
+
+WORKDIR /app
+USER app
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8080')+'/healthz')" || exit 1
 
 # One worker: the model is a per-process singleton loaded once at startup.
 CMD ["sh", "-c", "uvicorn kinetics_trainer.serving.app:app --host 0.0.0.0 --port ${PORT}"]
