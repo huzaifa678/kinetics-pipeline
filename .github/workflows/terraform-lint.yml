@@ -31,5 +31,8 @@ jobs:
           # Avoids GitHub API rate limits when fetching the AWS ruleset.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # --config with an ABSOLUTE path so --recursive applies the root .tflint.hcl
+      # (rule disables + plugins) to every module dir — recursive mode does not
+      # inherit the cwd config otherwise.
       - name: Run TFLint (recursive over all modules)
-        run: tflint --recursive --format compact
+        run: tflint --recursive --config "$PWD/.tflint.hcl" --format compact
