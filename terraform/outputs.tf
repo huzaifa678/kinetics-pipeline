@@ -53,25 +53,8 @@ output "checkpoint_bucket" {
 # ---------------------------------------------------------------------------
 # Container registry + CI/CD role ARNs (set these as GitHub repo variables).
 # ---------------------------------------------------------------------------
-output "ecr_repository_url" {
-  description = "ECR repository URL — the image.repository for the training chart (GitHub var: ECR_REPOSITORY)."
-  value       = module.ecr.repository_url
-}
-
-output "gha_ecr_push_role_arn" {
-  description = "GitHub Actions role for docker-build.yml (GitHub var: AWS_ROLE_ECR_PUSH)."
-  value       = var.enable_github_oidc ? module.cicd[0].ecr_push_role_arn : null
-}
-
-output "gha_terraform_plan_role_arn" {
-  description = "GitHub Actions role for terraform-plan.yml (GitHub var: AWS_ROLE_TF_PLAN)."
-  value       = var.enable_github_oidc ? module.cicd[0].terraform_plan_role_arn : null
-}
-
-output "gha_terraform_apply_role_arn" {
-  description = "GitHub Actions role for terraform-apply.yml (GitHub var: AWS_ROLE_TF_APPLY)."
-  value       = var.enable_github_oidc ? module.cicd[0].terraform_apply_role_arn : null
-}
+# NOTE: ECR + the OIDC provider and tf/ecr CI roles moved to the bootstrap stack
+# (terraform/bootstrap). Their outputs live there now — see bootstrap/outputs.tf.
 
 output "monthly_budget_usd" {
   description = "Configured monthly budget ceiling."
@@ -186,8 +169,8 @@ output "cloudfront_distribution_id" {
 }
 
 output "frontend_deploy_role_arn" {
-  description = "GitHub Actions role for frontend-deploy.yml (AWS_ROLE_FRONTEND_DEPLOY)."
-  value       = var.enable_github_oidc ? module.cicd[0].frontend_deploy_role_arn : null
+  description = "GitHub Actions role for frontend-deploy.yml (AWS_ROLE_FRONTEND_DEPLOY; null when the frontend is disabled)."
+  value       = local.frontend_deploy_enabled ? aws_iam_role.frontend_deploy[0].arn : null
 }
 
 output "inference_api_waf_arn" {
