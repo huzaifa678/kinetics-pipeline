@@ -160,6 +160,25 @@ resource "aws_iam_role_policy" "tf_plan_state" {
   policy = data.aws_iam_policy_document.tf_state.json
 }
 
+# AWS ReadOnlyAccess deliberately omits sensitive reads that `terraform plan`
+# needs while refreshing state — e.g. the MSK SCRAM secret (GetSecretValue) and
+# its customer-managed KMS key (Decrypt). Read-only; the plan role still can't
+# write anything.
+data "aws_iam_policy_document" "tf_plan_reads" {
+  statement {
+    sid       = "SensitiveReadsForRefresh"
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue", "kms:Decrypt"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "tf_plan_reads" {
+  name   = "${var.name}-gha-tf-plan-reads"
+  role   = aws_iam_role.tf_plan.id
+  policy = data.aws_iam_policy_document.tf_plan_reads.json
+}
+
 
 resource "aws_iam_role" "tf_apply" {
   name               = "${var.name}-gha-tf-apply"
