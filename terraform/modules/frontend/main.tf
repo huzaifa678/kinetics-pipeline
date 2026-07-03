@@ -2,7 +2,7 @@ data "aws_caller_identity" "current" {}
 
 locals {
   bucket_name = "${var.name}-frontend-${data.aws_caller_identity.current.account_id}"
-  has_domain = var.domain_name != ""
+  has_domain  = var.domain_name != ""
 }
 
 resource "aws_s3_bucket" "spa" {
