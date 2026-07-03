@@ -3,6 +3,12 @@ variable "cluster_name" {
   type        = string
 }
 
+variable "manage_incluster_addons" {
+  description = "Manage in-cluster workloads (ArgoCD, cert-manager, LB controller, external-dns + the cert-manager-dependent HyperPod operator addons) from Terraform. Set false when applying from CI against a VPN-locked EKS API — bootstrap ArgoCD out-of-band and let GitOps own them. AWS-API resources (Pod Identity, IAM) are unaffected."
+  type        = bool
+  default     = true
+}
+
 variable "environment" {
   description = "Environment name stamped on the ArgoCD in-cluster Secret's `environment` label — the ApplicationSet clusters generator uses it to pick the gitops/environments/<env> overlay."
   type        = string

@@ -83,7 +83,7 @@ resource "aws_eks_pod_identity_association" "otel_xray" {
 
 
 resource "helm_release" "argocd" {
-  count            = var.enable_argocd ? 1 : 0
+  count            = var.manage_incluster_addons && var.enable_argocd ? 1 : 0
   name             = "argocd"
   namespace        = "argocd"
   create_namespace = true
@@ -136,7 +136,7 @@ resource "helm_release" "argocd" {
 # var.environment — no CI write-back, true multi-cluster. Naming it "in-cluster"
 # + server=https://kubernetes.default.svc relabels ArgoCD's local cluster.
 resource "kubernetes_secret" "argocd_incluster" {
-  count = var.enable_argocd ? 1 : 0
+  count = var.manage_incluster_addons && var.enable_argocd ? 1 : 0
 
   metadata {
     name      = "in-cluster"
@@ -166,7 +166,7 @@ resource "kubernetes_secret" "argocd_incluster" {
 # and the manifest is rendered/owned by Terraform instead of a fire-and-forget
 # shell command.
 resource "helm_release" "argocd_apps" {
-  count = var.enable_argocd && var.gitops_repo_url != "" ? 1 : 0
+  count = var.manage_incluster_addons && var.enable_argocd && var.gitops_repo_url != "" ? 1 : 0
 
   name       = "argocd-apps"
   namespace  = "argocd"
@@ -210,7 +210,7 @@ resource "helm_release" "argocd_apps" {
 
 
 resource "helm_release" "cert_manager" {
-  count = var.enable_hyperpod_operator ? 1 : 0
+  count = var.manage_incluster_addons && var.enable_hyperpod_operator ? 1 : 0
 
   name             = "cert-manager"
   namespace        = "cert-manager"
@@ -231,13 +231,13 @@ resource "helm_release" "cert_manager" {
 
 #
 resource "terraform_data" "hyperpod_ready" {
-  count = var.enable_hyperpod_operator ? 1 : 0
+  count = var.manage_incluster_addons && var.enable_hyperpod_operator ? 1 : 0
   input = var.hyperpod_cluster_arn
 }
 
 
 resource "aws_eks_addon" "hyperpod_taskgovernance" {
-  count = var.enable_hyperpod_operator ? 1 : 0
+  count = var.manage_incluster_addons && var.enable_hyperpod_operator ? 1 : 0
 
   cluster_name                = var.cluster_name
   addon_name                  = "amazon-sagemaker-hyperpod-taskgovernance"
@@ -248,7 +248,7 @@ resource "aws_eks_addon" "hyperpod_taskgovernance" {
 }
 
 resource "aws_eks_addon" "hyperpod_operator" {
-  count = var.enable_hyperpod_operator ? 1 : 0
+  count = var.manage_incluster_addons && var.enable_hyperpod_operator ? 1 : 0
 
   cluster_name                = var.cluster_name
   addon_name                  = "amazon-sagemaker-hyperpod-training-operator"
@@ -267,7 +267,7 @@ resource "aws_eks_addon" "hyperpod_operator" {
 # ALB. Auth via Pod Identity (no IRSA/SA annotation needed).
 # ---------------------------------------------------------------------------
 resource "helm_release" "aws_load_balancer_controller" {
-  count = var.enable_aws_lb_controller ? 1 : 0
+  count = var.manage_incluster_addons && var.enable_aws_lb_controller ? 1 : 0
 
   name       = "aws-load-balancer-controller"
   namespace  = "kube-system"
@@ -292,7 +292,7 @@ resource "helm_release" "aws_load_balancer_controller" {
 # deletes pre-existing records it doesn't own.
 # ---------------------------------------------------------------------------
 resource "helm_release" "external_dns" {
-  count = var.enable_external_dns ? 1 : 0
+  count = var.manage_incluster_addons && var.enable_external_dns ? 1 : 0
 
   name       = "external-dns"
   namespace  = "kube-system"

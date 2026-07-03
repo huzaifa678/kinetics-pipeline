@@ -56,9 +56,14 @@ fsx_storage_capacity_gb   = 1200
 checkpoint_retention_days = 30
 
 # --- GitOps ---
-enable_argocd        = true
-gitops_repo_url      = "https://github.com/huzaifa678/Kinetics-Continious-Delivery.git"
-gitops_repo_revision = "main"
+# The prod EKS API is locked to the VPN egress, so CI can't reach the K8s API.
+# Terraform manages only AWS-API resources here; ArgoCD is bootstrapped from the
+# VPN once, then owns cert-manager / LB controller / external-dns via this repo.
+# Flip to true only when applying from a network that can reach the cluster API.
+manage_incluster_addons = false
+enable_argocd           = true
+gitops_repo_url         = "https://github.com/huzaifa678/Kinetics-Continious-Delivery.git"
+gitops_repo_revision    = "main"
 
 # --- Inference ingress (internal ALB over the Client VPN) ---
 enable_aws_lb_controller  = true

@@ -199,7 +199,7 @@ resource "aws_wafv2_web_acl" "inference_api" {
 
   name        = "${local.name}-api-waf"
   scope       = "REGIONAL"
-  description = "${local.name} public inference ALB — managed common rules + rate limit"
+  description = "${local.name} public inference ALB - managed common rules + rate limit"
 
   default_action {
     allow {}
@@ -368,6 +368,7 @@ module "addons" {
   otel_xray_role_arn         = module.iam.otel_xray_role_arn
   enable_managed_prometheus  = var.enable_managed_prometheus
   enable_xray_tracing        = var.enable_xray_tracing
+  manage_incluster_addons    = var.manage_incluster_addons
 
   aws_lb_controller_chart_version = var.aws_lb_controller_chart_version
   external_dns_chart_version      = var.external_dns_chart_version

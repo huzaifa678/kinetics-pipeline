@@ -346,6 +346,12 @@ variable "enable_argocd" {
   default     = true
 }
 
+variable "manage_incluster_addons" {
+  description = "Let Terraform manage in-cluster Helm/K8s workloads (ArgoCD, cert-manager, LB controller, external-dns, HyperPod operator addons). Set false when applying from CI against a VPN-locked EKS API; bootstrap ArgoCD out-of-band and let GitOps own them. AWS-API resources are unaffected."
+  type        = bool
+  default     = true
+}
+
 variable "gitops_repo_url" {
   description = "Git repository URL that ArgoCD watches for application manifests."
   type        = string
