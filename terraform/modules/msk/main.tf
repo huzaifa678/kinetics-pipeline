@@ -7,7 +7,7 @@ locals {
 
 resource "aws_security_group" "msk" {
   name        = "${var.name}-msk"
-  description = "MSK brokers — intra-VPC Kafka access only"
+  description = "MSK brokers - intra-VPC Kafka access only"
   vpc_id      = var.vpc_id
   tags        = merge(var.tags, { Name = "${var.name}-msk" })
 }

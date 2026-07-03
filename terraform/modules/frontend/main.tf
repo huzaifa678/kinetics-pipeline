@@ -160,7 +160,7 @@ resource "aws_wafv2_web_acl" "spa" {
 
   name        = "${var.name}-frontend-waf"
   scope       = "CLOUDFRONT"
-  description = "${var.name} SPA — managed common rules + rate limit"
+  description = "${var.name} SPA - managed common rules + rate limit"
 
   default_action {
     allow {}

@@ -91,6 +91,21 @@ data "aws_iam_policy_document" "hyperpod_inline" {
     ]
     resources = ["*"]
   }
+
+  # HyperPod attaches nodes to the VPC via ENIs and tears them down on
+  # scale-in/delete. CreateCluster validates these up front — without
+  # DeleteNetworkInterface it fails at CREATE with an execution-role error.
+  statement {
+    sid    = "VpcEniForClusterNodes"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DeleteNetworkInterface",
+      "ec2:CreateNetworkInterfacePermission",
+      "ec2:DeleteNetworkInterfacePermission",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "hyperpod_inline" {
