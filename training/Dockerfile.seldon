@@ -1,18 +1,21 @@
 FROM seldonio/mlserver:1.6.1-slim AS runtime
 
-# Root for the pip installs below (system site-packages). Video decoding uses
-# PyAV, whose wheels bundle the ffmpeg libraries — no system ffmpeg needed (and
-# the MLServer base is UBI, which has no apt-get anyway).
-USER root
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Root only for the installs below (system site-packages).
+USER root
 WORKDIR /app
 
-RUN pip install --no-cache-dir \
-        --index-url https://download.pytorch.org/whl/cpu \
+RUN pip install --index-url https://download.pytorch.org/whl/cpu \
         torch==2.3.1 torchvision==0.18.1
 
 COPY pyproject.toml ./
 COPY src/ ./src/
 
-# Install the package with the extra dependencies for Seldon and VideoMAE
-RUN pip install --no-cache-dir ".[seldon,videomae]" 
+# Package + Seldon/VideoMAE extras, then hand ownership to the non-root user.
+RUN pip install ".[seldon,videomae]" \
+    && chown -R 1000:0 /app
+
+# Back to the base image's unprivileged user for the mlserver runtime.
+USER 1000
