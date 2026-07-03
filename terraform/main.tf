@@ -122,6 +122,13 @@ module "msk" {
   tags = local.common_tags
 }
 
+# ECR lives in the bootstrap stack now (terraform/bootstrap); look it up by name
+# so the training/iam role can still be scoped to it. Bootstrap must be applied
+# first (it is — it's the manual one-shot that also creates the CI roles).
+data "aws_ecr_repository" "training" {
+  name = var.ecr_repository_name
+}
+
 module "iam" {
   source = "./modules/iam"
 
@@ -130,7 +137,7 @@ module "iam" {
   data_bucket_arn                  = module.storage.data_bucket_arn
   checkpoint_bucket_arn            = module.storage.checkpoint_bucket_arn
   karpenter_interruption_queue_arn = module.karpenter.interruption_queue_arn
-  ecr_repository_arn               = module.ecr.repository_arn
+  ecr_repository_arn               = data.aws_ecr_repository.training.arn
 
   # Inference ingress + AWS-managed observability Pod Identity roles (gated).
   amp_workspace_arn        = module.observability.amp_workspace_arn
@@ -369,40 +376,6 @@ module "addons" {
   tags = local.common_tags
 
   depends_on = [module.eks]
-}
-
-# ---------------------------------------------------------------------------
-# Container registry for the training image. CI builds with buildx (linux/amd64)
-# and pushes here; the GitOps repo's image tag is then bumped to the new SHA.
-# ---------------------------------------------------------------------------
-module "ecr" {
-  source = "./modules/ecr"
-
-  repository_name = var.ecr_repository_name
-  tags            = local.common_tags
-}
-
-# ---------------------------------------------------------------------------
-# CI/CD identity: GitHub Actions OIDC provider + least-privilege roles (ECR
-# push, Terraform plan, Terraform apply). Keyless — no static AWS access keys.
-# ---------------------------------------------------------------------------
-module "cicd" {
-  source = "./modules/cicd"
-  count  = var.enable_github_oidc ? 1 : 0
-
-  name                 = local.name
-  github_owner         = var.github_owner
-  github_repo          = var.github_repo
-  create_oidc_provider = var.create_github_oidc_provider
-  oidc_provider_arn    = var.github_oidc_provider_arn
-  ecr_repository_arn   = module.ecr.repository_arn
-  state_bucket         = var.terraform_state_bucket
-
-  # SPA deploy role (created only when the frontend is enabled).
-  frontend_bucket_arn       = var.enable_frontend ? module.frontend[0].spa_bucket_arn : ""
-  frontend_distribution_arn = var.enable_frontend ? module.frontend[0].cloudfront_distribution_arn : ""
-
-  tags = local.common_tags
 }
 
 # ---------------------------------------------------------------------------
