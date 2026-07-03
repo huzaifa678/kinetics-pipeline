@@ -44,7 +44,6 @@ module "eks" {
   system_node_desired_size  = var.system_node_desired_size
 
   cluster_admin_principal_arns = var.cluster_admin_principal_arns
-  enable_hyperpod_operator     = var.enable_hyperpod_operator
 
   # Lock the public EKS API endpoint to the VPC NAT gateway's Elastic IP — the
   # egress IP for AWS Client VPN clients routed through this VPC — plus any extra
@@ -275,13 +274,12 @@ module "storage" {
 module "hyperpod" {
   source = "./modules/hyperpod"
 
-  name                 = local.name
-  eks_cluster_arn      = module.eks.cluster_arn
-  execution_role_arn   = module.iam.hyperpod_execution_role_arn
-  subnet_ids           = module.vpc.private_subnet_ids
-  security_group_ids   = [module.eks.node_security_group_id]
-  lifecycle_bucket     = module.storage.lifecycle_bucket_name
-  lifecycle_bucket_arn = module.storage.lifecycle_bucket_arn
+  name               = local.name
+  eks_cluster_arn    = module.eks.cluster_arn
+  execution_role_arn = module.iam.hyperpod_execution_role_arn
+  subnet_ids         = module.vpc.private_subnet_ids
+  security_group_ids = [module.eks.node_security_group_id]
+  lifecycle_bucket   = module.storage.lifecycle_bucket_name
 
   gpu_instance_type     = var.gpu_instance_type
   gpu_instance_count    = var.gpu_instance_count
@@ -322,7 +320,6 @@ module "cost" {
 
   name               = local.name
   project_tag        = var.project
-  region             = var.region
   monthly_budget_usd = var.monthly_budget_usd
   alert_emails       = var.budget_alert_emails
   # When Karpenter autoscaling is on, Karpenter owns GPU scale-to-zero (via
@@ -342,7 +339,6 @@ module "cost" {
 module "addons" {
   source = "./modules/addons"
 
-  name         = local.name
   cluster_name = module.eks.cluster_name
   environment  = var.environment
 

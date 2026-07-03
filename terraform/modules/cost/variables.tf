@@ -8,11 +8,6 @@ variable "project_tag" {
   type        = string
 }
 
-variable "region" {
-  description = "AWS region."
-  type        = string
-}
-
 variable "monthly_budget_usd" {
   description = "Monthly budget ceiling in USD."
   type        = number

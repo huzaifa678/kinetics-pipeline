@@ -197,20 +197,10 @@ variable "ecr_repository_name" {
   default     = "kinetics-training"
 }
 
-variable "enable_github_oidc" {
-  description = "Create the GitHub Actions OIDC provider + CI roles (ECR push, tf plan, tf apply)."
-  type        = bool
-  default     = true
-}
-
-variable "create_github_oidc_provider" {
-  description = "Create the GitHub OIDC provider. Set false if the account already has token.actions.githubusercontent.com (then set github_oidc_provider_arn)."
-  type        = bool
-  default     = true
-}
-
+# The OIDC provider + CI roles live in the bootstrap stack now; the main stack
+# only references the provider ARN to trust it (e.g. the frontend-deploy role).
 variable "github_oidc_provider_arn" {
-  description = "Existing GitHub OIDC provider ARN (used when create_github_oidc_provider = false)."
+  description = "GitHub OIDC provider ARN from the bootstrap stack (github_oidc_provider_arn output). Enables the frontend-deploy role."
   type        = string
   default     = ""
 }

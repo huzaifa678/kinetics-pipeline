@@ -1,5 +1,3 @@
-data "aws_caller_identity" "current" {}
-
 # ---------------------------------------------------------------------------
 # SQS interruption queue. Karpenter watches this to gracefully drain nodes on
 # Spot interruption / rebalance / scheduled maintenance — essential when the

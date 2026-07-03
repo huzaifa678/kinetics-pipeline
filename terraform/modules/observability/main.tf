@@ -1,5 +1,3 @@
-data "aws_partition" "current" {}
-
 resource "aws_prometheus_workspace" "this" {
   count = var.enable_managed_prometheus ? 1 : 0
 

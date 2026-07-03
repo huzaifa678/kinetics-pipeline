@@ -72,6 +72,12 @@ resource "aws_acm_certificate" "server" {
   certificate_chain = tls_self_signed_cert.ca[0].cert_pem
 
   tags = merge(var.tags, { Name = "${var.name}-client-vpn-server" })
+
+  # The VPN endpoint references this cert; create the replacement before
+  # destroying the old one so a cert rotation doesn't tear down the endpoint.
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_iam_saml_provider" "this" {

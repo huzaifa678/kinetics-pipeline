@@ -1,8 +1,3 @@
-variable "name" {
-  description = "Name prefix."
-  type        = string
-}
-
 variable "cluster_name" {
   description = "EKS cluster name (target for Pod Identity associations)."
   type        = string

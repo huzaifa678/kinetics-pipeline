@@ -57,12 +57,6 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "enable_hyperpod_operator" {
-  description = "Install the SageMaker HyperPod training operator EKS add-on. Turn off for a minimal/test EKS-only cluster."
-  type        = bool
-  default     = true
-}
-
 variable "vpn_client_cidr_block" {
   description = <<-EOT
     Client VPN client CIDR allowed to reach the cluster API server SG on 443

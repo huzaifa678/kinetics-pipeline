@@ -46,10 +46,6 @@ variable "lifecycle_bucket" {
   type        = string
 }
 
-variable "lifecycle_bucket_arn" {
-  description = "ARN of the lifecycle-script bucket."
-  type        = string
-}
 
 variable "gpu_instance_type" {
   description = "GPU instance type for the training group."
