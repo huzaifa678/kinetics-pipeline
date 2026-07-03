@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import torch
 
@@ -35,6 +35,7 @@ class Prediction:
     score: float
 
 
+@runtime_checkable
 class PredictorLike(Protocol):
     """Structural interface shared by the local Predictor and the edge RemotePredictor.
 
