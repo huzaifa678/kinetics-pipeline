@@ -16,6 +16,14 @@ concurrency:
   group: frontend-deploy
   cancel-in-progress: true
 
+# The SPA config (bucket, CloudFront id, VITE_* Cognito/API values) is read from
+# the main stack's Terraform state at deploy time — not from repo variables — so
+# there's nothing to keep in sync after a terraform apply. The only repo vars are
+# the deploy role, region, and the state location.
+env:
+  TF_STATE_BUCKET: kinetics-pipeline-bucket-ec371a2a
+  TF_STATE_KEY: kinetics-pipeline-bucket/terraform.tfstate
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -34,25 +42,52 @@ jobs:
 
       - run: npm ci
 
-      - name: Build
-        env:
-          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
-          VITE_COGNITO_AUTHORITY: ${{ vars.VITE_COGNITO_AUTHORITY }}
-          VITE_COGNITO_CLIENT_ID: ${{ vars.VITE_COGNITO_CLIENT_ID }}
-          VITE_COGNITO_HOSTED_UI: ${{ vars.VITE_COGNITO_HOSTED_UI }}
-          VITE_REDIRECT_URI: ${{ vars.VITE_REDIRECT_URI }}
-        run: npm run build
-
+      # Assume the deploy role first — it grants read on the state object below.
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_FRONTEND_DEPLOY }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      # Pull the outputs straight from the state object and expose them to the
+      # build + deploy steps. jq reads the v4 state format (.outputs.<name>.value).
+      - name: Read frontend config from Terraform state
+        id: tf
+        run: |
+          aws s3 cp "s3://${TF_STATE_BUCKET}/${TF_STATE_KEY}" /tmp/state.json
+          out() { jq -r --arg k "$1" '.outputs[$k].value // ""' /tmp/state.json; }
+
+          SPA_BUCKET="$(out spa_bucket)"
+          DIST_ID="$(out cloudfront_distribution_id)"
+          API_HOST="$(out inference_api_host)"
+          SPA_URL="$(out spa_url)"
+
+          : "${SPA_BUCKET:?spa_bucket output empty — apply main with enable_frontend}"
+          : "${DIST_ID:?cloudfront_distribution_id output empty}"
+
+          {
+            echo "spa_bucket=$SPA_BUCKET"
+            echo "dist_id=$DIST_ID"
+            echo "vite_api_base=${API_HOST:+https://$API_HOST}"
+            echo "vite_cognito_authority=$(out cognito_issuer)"
+            echo "vite_cognito_client_id=$(out cognito_spa_client_id)"
+            echo "vite_cognito_hosted_ui=$(out cognito_hosted_ui_url)"
+            echo "vite_redirect_uri=${SPA_URL:+$SPA_URL/}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        env:
+          VITE_API_BASE: ${{ steps.tf.outputs.vite_api_base }}
+          VITE_COGNITO_AUTHORITY: ${{ steps.tf.outputs.vite_cognito_authority }}
+          VITE_COGNITO_CLIENT_ID: ${{ steps.tf.outputs.vite_cognito_client_id }}
+          VITE_COGNITO_HOSTED_UI: ${{ steps.tf.outputs.vite_cognito_hosted_ui }}
+          VITE_REDIRECT_URI: ${{ steps.tf.outputs.vite_redirect_uri }}
+        run: npm run build
+
       - name: Sync to S3 + invalidate CloudFront
         env:
-          BUCKET: ${{ vars.SPA_BUCKET }}
-          DIST_ID: ${{ vars.CLOUDFRONT_DIST_ID }}
+          BUCKET: ${{ steps.tf.outputs.spa_bucket }}
+          DIST_ID: ${{ steps.tf.outputs.dist_id }}
         run: |
           aws s3 sync dist/ "s3://${BUCKET}/" --delete
           aws cloudfront create-invalidation --distribution-id "${DIST_ID}" --paths '/*'
