@@ -1,0 +1,38 @@
+name: python-test
+
+on:
+  pull_request:
+    paths:
+      - "training/**"
+      - ".github/workflows/python-test.yml"
+  push:
+    branches: [main]
+    paths:
+      - "training/**"
+      - ".github/workflows/python-test.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: training
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11" # matches the dev venv; torch 2.3.1 wheels exist for 3.11
+          cache: pip
+          cache-dependency-path: training/pyproject.toml
+
+      - name: Install torch (CPU) + package + pytest
+        run: |
+          pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[serving]" pytest
+
+      - name: Run tests
+        run: pytest tests -q
