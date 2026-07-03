@@ -1,38 +1,39 @@
 FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime AS builder
 
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir build
+# Isolated venv that still sees the base image's torch/torchvision/CUDA stack.
+RUN python -m venv --system-site-packages /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /build
 COPY pyproject.toml ./
 COPY src/ ./src/
+RUN pip install ".[otel,etl]"
 
-# 1) Build the kinetics_trainer wheel. 2) Resolve + download/build wheels for
-# its runtime deps (incl. the [otel] extra) into the same wheelhouse. torch /
-# torchvision are excluded by pyproject (the base image provides them).
-RUN python -m build --wheel --outdir /wheels . \
-    && pip wheel --no-cache-dir --wheel-dir /wheels ".[otel,etl]"
-
+# --------------------------------------------------------------------------
 FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime AS runtime
 
-# ffmpeg provides the codecs PyAV needs to decode Kinetics mp4 clips.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg && rm -rf /var/lib/apt/lists/*
+# PyAV (the mp4 decoder) ships ffmpeg in its wheel, so no system ffmpeg needed.
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    NCCL_DEBUG=INFO
+
+COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /workspace
-
-# Install the trainer + deps purely from local wheels, then drop the wheelhouse.
-COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir --no-index --find-links=/wheels "kinetics-trainer[otel,etl]" \
-    && rm -rf /wheels
-
-# torchrun entrypoint script (the package itself is installed via the wheel).
+# torchrun entrypoint script + inference helpers (the package is in the venv).
 COPY train.py ./train.py
 COPY inference/ ./inference/
 
-ENV NCCL_DEBUG=INFO
+# Run as a non-root user; GPU access does not require root.
+RUN useradd --create-home --uid 10001 appuser \
+    && chown -R appuser:appuser /workspace
+USER appuser
 
 # torchrun is the launcher; the HyperPodPyTorchJob overrides args at runtime.
 ENTRYPOINT ["torchrun", "--nproc_per_node=1", "/workspace/train.py"]
