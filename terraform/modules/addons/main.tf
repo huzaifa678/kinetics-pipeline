@@ -60,7 +60,7 @@ resource "aws_eks_pod_identity_association" "external_dns" {
 # In-cluster Prometheus SA -> AMP remote_write role (Pod Identity). The SA name
 # is the kube-prometheus-stack default (release "kube-prometheus-stack").
 resource "aws_eks_pod_identity_association" "amp_remote_write" {
-  count = var.amp_remote_write_role_arn != "" ? 1 : 0
+  count = var.enable_managed_prometheus ? 1 : 0
 
   cluster_name    = var.cluster_name
   namespace       = "monitoring"
@@ -72,7 +72,7 @@ resource "aws_eks_pod_identity_association" "amp_remote_write" {
 # In-cluster OTel collector SA -> X-Ray write role (Pod Identity). SA name is
 # pinned by fullnameOverride: otel-collector in the GitOps values.
 resource "aws_eks_pod_identity_association" "otel_xray" {
-  count = var.otel_xray_role_arn != "" ? 1 : 0
+  count = var.enable_xray_tracing ? 1 : 0
 
   cluster_name    = var.cluster_name
   namespace       = "observability"

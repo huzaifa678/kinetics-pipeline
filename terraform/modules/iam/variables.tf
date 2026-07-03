@@ -30,9 +30,15 @@ variable "ecr_repository_arn" {
 }
 
 variable "amp_workspace_arn" {
-  description = "AMP workspace ARN — gates the amp-remote-write Pod Identity role (created only when non-empty). Also scopes the otel collector's optional remote_write."
+  description = "AMP workspace ARN scoping the amp-remote-write role (may be unknown at plan; gate creation on enable_managed_prometheus, not this)."
   type        = string
   default     = ""
+}
+
+variable "enable_managed_prometheus" {
+  description = "Create the amp-remote-write Pod Identity role. Known at plan time (unlike amp_workspace_arn), so it gates count safely."
+  type        = bool
+  default     = false
 }
 
 variable "enable_xray_tracing" {

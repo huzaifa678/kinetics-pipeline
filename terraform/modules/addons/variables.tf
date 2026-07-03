@@ -130,15 +130,30 @@ variable "external_dns_domain_filter" {
 }
 
 variable "amp_remote_write_role_arn" {
-  description = "Pod Identity role ARN for in-cluster Prometheus -> AMP remote_write. Empty = no association."
+  description = "Pod Identity role ARN for in-cluster Prometheus -> AMP remote_write (may be unknown at plan)."
   type        = string
   default     = ""
 }
 
 variable "otel_xray_role_arn" {
-  description = "Pod Identity role ARN for the otel-collector -> X-Ray. Empty = no association."
+  description = "Pod Identity role ARN for the otel-collector -> X-Ray (may be unknown at plan)."
   type        = string
   default     = ""
+}
+
+# Bools known at plan time — used to gate the Pod Identity association counts
+# above (the *_role_arn values are created in the same apply and are unknown at
+# plan, so they can't gate count directly).
+variable "enable_managed_prometheus" {
+  description = "Associate the in-cluster Prometheus SA with the AMP remote_write role."
+  type        = bool
+  default     = false
+}
+
+variable "enable_xray_tracing" {
+  description = "Associate the otel-collector SA with the X-Ray role."
+  type        = bool
+  default     = false
 }
 
 variable "aws_lb_controller_chart_version" {

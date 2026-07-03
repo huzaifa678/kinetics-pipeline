@@ -82,7 +82,7 @@ enable_waf               = true
 frontend_domain_name     = "" # OPTIONAL: blank ⇒ SPA served on the *.cloudfront.net URL (no DNS)
 api_domain_name          = "" # for a custom HTTPS API host (needs a domain); blank keeps inference internal
 frontend_route53_zone_id = "" # only needed if frontend_domain_name/api_domain_name are set
-cognito_hosted_ui_prefix = "" # REQUIRED: globally-unique prefix, e.g. "kinetics-prod-auth"
+cognito_hosted_ui_prefix = "kinetics-prod-auth" # REQUIRED: globally-unique across ALL AWS accounts; change if taken
 # cognito_extra_callback_urls = ["http://localhost:5173/"]  # for local SPA dev
 
 # COST while up (us-east-1, GPUs idle at 0): idle baseline ~$1.25/hr (EKS + MLflow

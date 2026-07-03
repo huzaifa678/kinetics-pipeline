@@ -445,7 +445,7 @@ resource "aws_iam_role_policy" "karpenter_controller" {
 # workspace. Gated by the workspace ARN — created only when AMP is enabled.
 # ===========================================================================
 data "aws_iam_policy_document" "amp_remote_write" {
-  count = var.amp_workspace_arn != "" ? 1 : 0
+  count = var.enable_managed_prometheus ? 1 : 0
 
   statement {
     sid       = "AmpRemoteWrite"
@@ -455,7 +455,7 @@ data "aws_iam_policy_document" "amp_remote_write" {
 }
 
 resource "aws_iam_role" "amp_remote_write" {
-  count = var.amp_workspace_arn != "" ? 1 : 0
+  count = var.enable_managed_prometheus ? 1 : 0
 
   name               = "${var.name}-amp-remote-write"
   assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
@@ -463,7 +463,7 @@ resource "aws_iam_role" "amp_remote_write" {
 }
 
 resource "aws_iam_role_policy" "amp_remote_write" {
-  count = var.amp_workspace_arn != "" ? 1 : 0
+  count = var.enable_managed_prometheus ? 1 : 0
 
   name   = "${var.name}-amp-remote-write"
   role   = aws_iam_role.amp_remote_write[0].id

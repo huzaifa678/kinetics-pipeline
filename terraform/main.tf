@@ -139,11 +139,12 @@ module "iam" {
   ecr_repository_arn               = data.aws_ecr_repository.training.arn
 
   # Inference ingress + AWS-managed observability Pod Identity roles (gated).
-  amp_workspace_arn        = module.observability.amp_workspace_arn
-  enable_xray_tracing      = var.enable_xray_tracing
-  enable_aws_lb_controller = var.enable_aws_lb_controller
-  enable_external_dns      = var.enable_external_dns
-  route53_zone_id          = var.inference_route53_zone_id
+  amp_workspace_arn         = module.observability.amp_workspace_arn
+  enable_managed_prometheus = var.enable_managed_prometheus
+  enable_xray_tracing       = var.enable_xray_tracing
+  enable_aws_lb_controller  = var.enable_aws_lb_controller
+  enable_external_dns       = var.enable_external_dns
+  route53_zone_id           = var.inference_route53_zone_id
 
   tags = local.common_tags
 }
@@ -365,6 +366,8 @@ module "addons" {
   external_dns_domain_filter = var.inference_domain_name
   amp_remote_write_role_arn  = module.iam.amp_remote_write_role_arn
   otel_xray_role_arn         = module.iam.otel_xray_role_arn
+  enable_managed_prometheus  = var.enable_managed_prometheus
+  enable_xray_tracing        = var.enable_xray_tracing
 
   aws_lb_controller_chart_version = var.aws_lb_controller_chart_version
   external_dns_chart_version      = var.external_dns_chart_version
