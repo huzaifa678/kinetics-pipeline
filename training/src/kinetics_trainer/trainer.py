@@ -30,6 +30,7 @@ from .tracking import ExperimentTracker
 
 log = get_logger(__name__)
 
+
 class Trainer:
     """Orchestrates the fit/evaluate loop over its injected collaborators."""
 
