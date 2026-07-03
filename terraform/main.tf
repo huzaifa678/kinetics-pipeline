@@ -291,6 +291,8 @@ module "hyperpod" {
   autoscaler_role_arn    = module.iam.hyperpod_autoscaler_role_arn
 
   tags = local.common_tags
+
+  depends_on = [module.iam]
 }
 
 # ---------------------------------------------------------------------------
