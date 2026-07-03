@@ -27,17 +27,18 @@ env:
   TF_VERSION: "1.10.5"
 
 # Single global lock: all profiles share ONE terraform state (one backend key),
-# so applies must never run concurrently regardless of selected profile.
+# so applies must never run concurrently regardless of selected profile. This
+# also guarantees the state can't change between the plan and apply jobs below.
 concurrency:
   group: terraform-apply
   cancel-in-progress: false
 
 jobs:
-  apply:
+  # 1) Plan against current main + current state, freeze it to tfplan. Read-only
+  #    tf-plan role — no write creds needed to produce a plan. Ungated so it runs
+  #    immediately; the human gate is on the apply job.
+  plan:
     runs-on: ubuntu-latest
-    # Per-env gate + OIDC subject: the chosen profile = the GitHub Environment.
-    # Configure required reviewers per env in repo Settings (e.g. gate `prod`).
-    environment: ${{ github.event.inputs.environment || 'dev' }}
     defaults:
       run:
         working-directory: terraform
@@ -45,9 +46,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Map the selected profile -> the -var-file chain. dev/prod/test are
-      # standalone; novpn/kafka layer on top of dev (later var-file wins). The
-      # GitOps env is NOT set here — ArgoCD derives it from the cluster's
-      # `environment` label, which Terraform stamps from var.environment.
+      # standalone; novpn/kafka layer on top of dev (later var-file wins).
       - name: Resolve tfvars profile
         id: profile
         env:
@@ -65,7 +64,61 @@ jobs:
             [ -f "$f" ] || { echo "::error::missing var-file $f"; exit 1; }
           done
           echo "var_files=$files" >> "$GITHUB_OUTPUT"
-          echo "### Applying profile \`$PROFILE\` ($files)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Plan for profile \`$PROFILE\` ($files)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TF_PLAN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "${{ env.TF_VERSION }}"
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Plan
+        run: terraform plan ${{ steps.profile.outputs.var_files }} -input=false -lock-timeout=120s -out=tfplan
+
+      - name: Plan to run summary
+        run: |
+          {
+            echo '```'
+            terraform show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # tfplan may contain sensitive values in plaintext — keep it briefly and
+      # only for this run's apply job.
+      - name: Upload plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: terraform/tfplan
+          retention-days: 1
+          if-no-files-found: error
+
+  # 2) Apply the exact frozen plan. Gated by the GitHub Environment (required
+  #    reviewer per env, e.g. prod) — the reviewer approves AFTER seeing the plan
+  #    in job 1's summary, so what's approved is exactly what applies. If state
+  #    drifted out-of-band, `apply tfplan` fails on a stale plan (safe).
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: terraform
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -80,7 +133,8 @@ jobs:
       - name: Init
         run: terraform init -input=false
 
+      # Saved plan: vars are baked in (no -var-file), and it applies without an
+      # extra approval. GitOps is not written back — ArgoCD picks the env overlay
+      # from the cluster's `environment` label (stamped from var.environment).
       - name: Apply
-        run: terraform apply ${{ steps.profile.outputs.var_files }} -auto-approve -input=false -lock-timeout=120s
-        # No GitOps write-back: ArgoCD picks the env overlay from the cluster's
-        # `environment` label (stamped by Terraform from var.environment).
+        run: terraform apply -input=false -lock-timeout=120s tfplan
