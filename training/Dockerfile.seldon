@@ -1,8 +1,9 @@
 FROM seldonio/mlserver:1.6.1-slim AS runtime
 
+# Root for the pip installs below (system site-packages). Video decoding uses
+# PyAV, whose wheels bundle the ffmpeg libraries — no system ffmpeg needed (and
+# the MLServer base is UBI, which has no apt-get anyway).
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
