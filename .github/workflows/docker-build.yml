@@ -12,8 +12,16 @@ permissions:
   id-token: write
   contents: read
 
+# Serialize whole runs: the bump-* jobs push to the same GitOps repo, so two
+# overlapping runs (e.g. quick successive merges) must not race. Queue, never
+# cancel — every pushed image still gets its GitOps bump.
+concurrency:
+  group: docker-build
+  cancel-in-progress: false
+
 jobs:
-  build:
+  # Single source of truth for the image tags (also consumed by the bumps).
+  tags:
     runs-on: ubuntu-latest
     outputs:
       train_tag: ${{ steps.meta.outputs.train_tag }}
@@ -21,7 +29,6 @@ jobs:
       seldon_tag: ${{ steps.meta.outputs.seldon_tag }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Compute image tags
         id: meta
         run: |
@@ -32,6 +39,22 @@ jobs:
           echo "train_tag=sha-$short" >> "$GITHUB_OUTPUT"
           echo "serve_tag=serve-$short" >> "$GITHUB_OUTPUT"
           echo "seldon_tag=seldon-$short" >> "$GITHUB_OUTPUT"
+
+  # Build + push all three images in parallel. They share the training/ context
+  # (src/ + pyproject), so each rebuilds on any training/** change; the buildx
+  # gha cache (per-scope) keeps unchanged images cheap.
+  build:
+    needs: tags
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: training, file: training/Dockerfile, scope: training, tag: "${{ needs.tags.outputs.train_tag }}" }
+          - { name: serving, file: training/Dockerfile.serve, scope: serving, tag: "${{ needs.tags.outputs.serve_tag }}" }
+          - { name: seldon, file: training/Dockerfile.seldon, scope: seldon, tag: "${{ needs.tags.outputs.seldon_tag }}" }
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -45,65 +68,43 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push training image (linux/amd64)
+      - name: Build and push ${{ matrix.name }} image (linux/amd64)
         uses: docker/build-push-action@v6
         with:
           context: training
-          file: training/Dockerfile
+          file: ${{ matrix.file }}
           platforms: linux/amd64
           push: true
           # Immutable repo: push only the unique SHA tag (never overwrite latest).
-          tags: ${{ vars.ECR_REPOSITORY }}:${{ steps.meta.outputs.train_tag }}
-          cache-from: type=gha,scope=training
-          cache-to: type=gha,mode=max,scope=training
-
-      - name: Build and push inference (serving) image (linux/amd64)
-        uses: docker/build-push-action@v6
-        with:
-          context: training
-          file: training/Dockerfile.serve
-          platforms: linux/amd64
-          push: true
-          tags: ${{ vars.ECR_REPOSITORY }}:${{ steps.meta.outputs.serve_tag }}
-          cache-from: type=gha,scope=serving
-          cache-to: type=gha,mode=max,scope=serving
-
-      - name: Build and push Seldon MLServer runtime image (linux/amd64)
-        uses: docker/build-push-action@v6
-        with:
-          context: training
-          file: training/Dockerfile.seldon
-          platforms: linux/amd64
-          push: true
-          tags: ${{ vars.ECR_REPOSITORY }}:${{ steps.meta.outputs.seldon_tag }}
-          cache-from: type=gha,scope=seldon
-          cache-to: type=gha,mode=max,scope=seldon
+          tags: ${{ vars.ECR_REPOSITORY }}:${{ matrix.tag }}
+          cache-from: type=gha,scope=${{ matrix.scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
 
   # Bump the training chart's image tag in the GitOps repo.
   bump-training:
-    needs: build
+    needs: [tags, build]
     uses: ./.github/workflows/update-gitops.yml
     with:
-      image_tag: ${{ needs.build.outputs.train_tag }}
+      image_tag: ${{ needs.tags.outputs.train_tag }}
       values_path: helm/training-job/values.yaml
     secrets: inherit
 
   # Bump the inference chart's image tag. Runs after bump-training so the two
   # commits to the same GitOps repo serialize (no concurrent-push race).
   bump-inference:
-    needs: [build, bump-training]
+    needs: [tags, bump-training]
     uses: ./.github/workflows/update-gitops.yml
     with:
-      image_tag: ${{ needs.build.outputs.serve_tag }}
+      image_tag: ${{ needs.tags.outputs.serve_tag }}
       values_path: helm/inference-service/values.yaml
     secrets: inherit
 
   # Bump the Seldon custom-server image in the A/B experiment chart. Chained after
   # bump-inference so all three GitOps-repo commits serialize.
   bump-seldon:
-    needs: [build, bump-inference]
+    needs: [tags, bump-inference]
     uses: ./.github/workflows/update-gitops.yml
     with:
-      image_tag: ${{ needs.build.outputs.seldon_tag }}
+      image_tag: ${{ needs.tags.outputs.seldon_tag }}
       values_path: gitops/config/seldon-experiment/values.yaml
     secrets: inherit
