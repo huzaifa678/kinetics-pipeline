@@ -1,0 +1,75 @@
+name: update-gitops-infra
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Infra app name (directory under gitops/<category>/)"
+        required: true
+        type: string
+      chart_version:
+        description: "New chart version to pin (e.g. v1.20.3 or 1.13.4)"
+        required: true
+        type: string
+      category:
+        description: "Catalog category the app lives under"
+        required: false
+        type: choice
+        default: infra
+        options:
+          - infra
+          - observability
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint GitHub App token for the GitOps repo
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GITOPS_APP_ID }}
+          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ vars.GITOPS_REPO_NAME }}
+
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ vars.GITOPS_REPO_NAME }}
+          token: ${{ steps.app-token.outputs.token }}
+          path: gitops
+
+      - name: Bump chartVersion (yq)
+        working-directory: gitops
+        env:
+          APP: ${{ inputs.app }}
+          CHART_VERSION: ${{ inputs.chart_version }}
+          CATEGORY: ${{ inputs.category }}
+        run: |
+          FILE="gitops/${CATEGORY}/${APP}/app.yaml"
+          [ -f "$FILE" ] || { echo "::error::no catalog entry at ${FILE}"; exit 1; }
+          # ubuntu-latest ships mikefarah yq v4. Keep it quoted (a string).
+          yq -i '.chartVersion = strenv(CHART_VERSION)' "$FILE"
+          echo "FILE=$FILE" >> "$GITHUB_ENV"
+          echo "Set ${APP} chartVersion -> ${CHART_VERSION}"
+          git --no-pager diff -- "$FILE" || true
+
+      - name: Commit & push
+        working-directory: gitops
+        env:
+          APP: ${{ inputs.app }}
+          CHART_VERSION: ${{ inputs.chart_version }}
+        run: |
+          git config user.name "kinetics-ci[bot]"
+          git config user.email "kinetics-ci[bot]@users.noreply.github.com"
+          if git diff --quiet -- "$FILE"; then
+            echo "No change — ${APP} already at ${CHART_VERSION}."
+            exit 0
+          fi
+          git add "$FILE"
+          git commit -m "ci: bump ${APP} chart -> ${CHART_VERSION}"
+          git push
