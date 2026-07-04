@@ -75,6 +75,16 @@ variable "cluster_deployer_principal_arns" {
   default     = []
 }
 
+variable "cluster_viewer_principal_arns" {
+  description = <<-EOT
+    IAM principal ARNs (e.g. the CI plan role) granted a read-only EKS access
+    entry (AmazonEKSAdminViewPolicy). Lets `terraform plan` refresh in-cluster
+    resources without cluster-admin or write access.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "enable_hyperpod_operator" {
   description = "Install the SageMaker HyperPod training operator EKS add-on. Set false for a minimal EKS-only test cluster."
   type        = bool

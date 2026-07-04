@@ -22,6 +22,13 @@ cluster_deployer_principal_arns = [
   "arn:aws:iam::533267178572:role/kinetics-pipeline-prod-gha-tf-apply",
 ]
 
+# CI plan role (assumed by the runner on PR/plan). Read-only access entry so
+# `terraform plan` can refresh in-cluster resources (argocd secret, Helm release
+# secrets, RBAC) without a 401. AmazonEKSAdminViewPolicy = read incl. secrets.
+cluster_viewer_principal_arns = [
+  "arn:aws:iam::533267178572:role/kinetics-pipeline-prod-gha-tf-plan",
+]
+
 # Public endpoint stays locked to the NAT EIP (added in main.tf); reach the API
 # over the Client VPN. Add CI egress CIDRs here if apply runs outside the VPN.
 cluster_endpoint_public_access_cidrs = []

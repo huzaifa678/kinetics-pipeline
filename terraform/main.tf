@@ -45,6 +45,7 @@ module "eks" {
 
   cluster_admin_principal_arns    = var.cluster_admin_principal_arns
   cluster_deployer_principal_arns = var.cluster_deployer_principal_arns
+  cluster_viewer_principal_arns   = var.cluster_viewer_principal_arns
 
   # Lock the public EKS API endpoint to the VPC NAT gateway's Elastic IP — the
   # egress IP for AWS Client VPN clients routed through this VPC — plus any extra
@@ -357,6 +358,25 @@ module "cost" {
 }
 
 # ---------------------------------------------------------------------------
+# CI-deployer RBAC (terraform/rbac/ci-deployer.yaml) applied via the kubectl
+# provider, so it's TF-managed rather than a manual kubectl apply. It's the
+# authorization behind the deployer access entry (var.cluster_deployer_principal_arns)
+# and MUST exist before module.addons installs argocd. Gated on manage_argocd +
+# at least one deployer principal. Bootstrap caveat: the FIRST apply that creates
+# this must run as a cluster admin (the runner/deployer can't self-grant — see
+# the module).
+# ---------------------------------------------------------------------------
+module "ci_deployer_rbac" {
+  source = "./modules/ci_deployer_rbac"
+  count  = var.manage_argocd && length(var.cluster_deployer_principal_arns) > 0 ? 1 : 0
+
+  # abspath so file() resolves the same regardless of which module reads it.
+  manifest_path = abspath("${path.module}/rbac/ci-deployer.yaml")
+
+  depends_on = [module.eks]
+}
+
+# ---------------------------------------------------------------------------
 # In-cluster add-ons via Helm: Karpenter, ACK SageMaker controller,
 # DCGM/Prometheus GPU monitoring, and (optionally) ArgoCD for GitOps.
 # ---------------------------------------------------------------------------
@@ -399,7 +419,9 @@ module "addons" {
 
   tags = local.common_tags
 
-  depends_on = [module.eks]
+  # ci_deployer_rbac must exist before argocd install so the deployer role is
+  # authorized for manage_argocd. module.eks stays for the access entries + cluster.
+  depends_on = [module.eks, module.ci_deployer_rbac]
 }
 
 # ---------------------------------------------------------------------------

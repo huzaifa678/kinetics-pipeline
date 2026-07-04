@@ -31,16 +31,24 @@ module "eks" {
         }
       }
     },
-    # CI deployer: mapped to a k8s group ONLY — no AWS-managed access policy, so
-    # NOT cluster-admin. Authorization is the out-of-band `ci-deployer` ClusterRole
-    # bound to var.deployer_group (terraform/rbac/ci-deployer.yaml). The access
-    # entry itself is an AWS-API resource, so the runner can create it without
-    # cluster access; it just needs the ClusterRoleBinding to already exist.
     {
       for idx, arn in var.cluster_deployer_principal_arns : "ci-deployer-${idx}" => {
         principal_arn       = arn
         kubernetes_groups   = [var.deployer_group]
         policy_associations = {}
+      }
+    },
+    {
+      for idx, arn in var.cluster_viewer_principal_arns : "cluster-viewer-${idx}" => {
+        principal_arn = arn
+        policy_associations = {
+          view = {
+            policy_arn = "arn:${data.aws_partition.current.partition}:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy"
+            access_scope = {
+              type = "cluster"
+            }
+          }
+        }
       }
     },
   )

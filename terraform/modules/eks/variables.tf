@@ -53,6 +53,17 @@ variable "cluster_deployer_principal_arns" {
   default     = []
 }
 
+variable "cluster_viewer_principal_arns" {
+  description = <<-EOT
+    IAM principal ARNs (e.g. the CI plan role) granted a read-only access entry
+    (AmazonEKSAdminViewPolicy — read incl. secrets). Lets `terraform plan` refresh
+    in-cluster resources (Helm release secrets, argocd secret, RBAC) without
+    cluster-admin or write access.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "deployer_group" {
   description = "Kubernetes group the deployer access entries map to; the ci-deployer ClusterRoleBinding must bind this exact group."
   type        = string

@@ -14,7 +14,7 @@ ASG="${NAME}-gha-runner"
 echo "==> 1/3 apply runner module (profile: $ENVIRONMENT)"
 terraform -chdir="$TF" apply \
   -var-file="terraform.tfvars.${ENVIRONMENT}" \
-  -target=module.github_runner -auto-approve -input=false
+  -target=module.vpc -target=module.github_runner -auto-approve -input=false
 
 echo "==> 2/3 store the PAT in Secrets Manager ($SECRET_ID)"
 aws secretsmanager put-secret-value --region "$REGION" \

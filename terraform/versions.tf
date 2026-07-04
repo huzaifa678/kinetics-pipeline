@@ -22,6 +22,14 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 3.2"
     }
+    # Applies the ci-deployer RBAC manifest (terraform/rbac/ci-deployer.yaml).
+    # gavinbunney/kubectl over hashicorp's kubernetes_manifest: it doesn't need a
+    # server-side dry-run (and thus cluster read) at PLAN time, so it doesn't 401
+    # on the read-only plan role for a resource that isn't in state yet.
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = ">= 1.14.0"
+    }
     archive = {
       source  = "hashicorp/archive"
       version = ">= 2.4.0"
@@ -84,5 +92,19 @@ provider "helm" {
       command     = "aws"
       args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.region]
     }
+  }
+}
+
+# Same exec-auth as the kubernetes/helm providers. load_config_file=false so it
+# never falls back to a kubeconfig on the runner.
+provider "kubectl" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  load_config_file       = false
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.region]
   }
 }
