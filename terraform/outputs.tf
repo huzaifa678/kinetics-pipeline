@@ -86,6 +86,16 @@ output "msk_bootstrap_brokers_tls" {
   value       = var.enable_msk ? module.msk[0].bootstrap_brokers_tls : null
 }
 
+output "msk_bootstrap_brokers_sasl_scram" {
+  description = "MSK SASL/SCRAM bootstrap brokers (port 9096; empty unless enable_msk + client_authentication=sasl_scram — the prod posture). Feed to Seldon kafkaConfig.bootstrap."
+  value       = var.enable_msk ? module.msk[0].bootstrap_brokers_sasl_scram : null
+}
+
+output "msk_scram_secret_arn" {
+  description = "Secrets Manager ARN with the SASL/SCRAM username/password (null unless enable_msk + sasl_scram). Bridge to a k8s Secret for Seldon (e.g. External Secrets Operator)."
+  value       = var.enable_msk ? module.msk[0].scram_secret_arn : null
+}
+
 # ---------------------------------------------------------------------------
 # Inference ingress + AWS-managed observability.
 # ---------------------------------------------------------------------------
