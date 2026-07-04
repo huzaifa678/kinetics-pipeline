@@ -80,31 +80,8 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
 
-  # Bump the training chart's image tag in the GitOps repo.
-  bump-training:
-    needs: [tags, build]
-    uses: ./.github/workflows/update-gitops.yml
-    with:
-      image_tag: ${{ needs.tags.outputs.train_tag }}
-      values_path: helm/training-job/values.yaml
-    secrets: inherit
-
-  # Bump the inference chart's image tag. Runs after bump-training so the two
-  # commits to the same GitOps repo serialize (no concurrent-push race).
-  bump-inference:
-    needs: [tags, bump-training]
-    uses: ./.github/workflows/update-gitops.yml
-    with:
-      image_tag: ${{ needs.tags.outputs.serve_tag }}
-      values_path: helm/inference-service/values.yaml
-    secrets: inherit
-
-  # Bump the Seldon custom-server image in the A/B experiment chart. Chained after
-  # bump-inference so all three GitOps-repo commits serialize.
-  bump-seldon:
-    needs: [tags, bump-inference]
-    uses: ./.github/workflows/update-gitops.yml
-    with:
-      image_tag: ${{ needs.tags.outputs.seldon_tag }}
-      values_path: gitops/config/seldon-experiment/values.yaml
-    secrets: inherit
+  # NOTE: image-tag write-back to the GitOps repo is owned by ArgoCD Image
+  # Updater now (annotations on the kinetics-training/inference/experiment
+  # Applications), not by chained update-gitops jobs. This workflow only builds +
+  # pushes the sha-/serve-/seldon- tags; Image Updater picks up the newest build
+  # and commits image.tag. update-gitops.yml stays as a manual fallback.

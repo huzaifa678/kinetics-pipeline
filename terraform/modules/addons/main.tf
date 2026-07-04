@@ -83,7 +83,7 @@ resource "aws_eks_pod_identity_association" "otel_xray" {
 
 
 resource "helm_release" "argocd" {
-  count            = var.manage_incluster_addons && var.enable_argocd ? 1 : 0
+  count            = var.manage_argocd && var.enable_argocd ? 1 : 0
   name             = "argocd"
   namespace        = "argocd"
   create_namespace = true
@@ -126,6 +126,15 @@ resource "helm_release" "argocd" {
         EOT
       }
     }
+    # Disable git submodule init on the repo-server: the AWS HyperPod dependency
+    # chart's source repo has a broken .gitmodules, which otherwise fails every
+    # checkout. We use no submodules, so turning it off is safe globally.
+    repoServer = {
+      env = [{
+        name  = "ARGOCD_GIT_MODULES_ENABLED"
+        value = "false"
+      }]
+    }
   })]
 }
 
@@ -136,7 +145,7 @@ resource "helm_release" "argocd" {
 # var.environment — no CI write-back, true multi-cluster. Naming it "in-cluster"
 # + server=https://kubernetes.default.svc relabels ArgoCD's local cluster.
 resource "kubernetes_secret" "argocd_incluster" {
-  count = var.manage_incluster_addons && var.enable_argocd ? 1 : 0
+  count = var.manage_argocd && var.enable_argocd ? 1 : 0
 
   metadata {
     name      = "in-cluster"
@@ -166,7 +175,7 @@ resource "kubernetes_secret" "argocd_incluster" {
 # and the manifest is rendered/owned by Terraform instead of a fire-and-forget
 # shell command.
 resource "helm_release" "argocd_apps" {
-  count = var.manage_incluster_addons && var.enable_argocd && var.gitops_repo_url != "" ? 1 : 0
+  count = var.manage_argocd && var.enable_argocd && var.gitops_repo_url != "" ? 1 : 0
 
   name       = "argocd-apps"
   namespace  = "argocd"

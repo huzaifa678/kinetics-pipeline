@@ -1,0 +1,52 @@
+#!/bin/bash
+# Self-hosted GitHub Actions runner bootstrap. Installs the runner + the tools
+# terraform-apply needs (terraform, kubectl, helm; awscli ships with AL2023),
+# fetches a registration token from the PAT in Secrets Manager, and registers.
+set -euxo pipefail
+
+REGION="${region}"
+PAT_SECRET_ARN="${pat_secret_arn}"
+GH_OWNER="${github_owner}"
+GH_REPO="${github_repo}"
+LABELS="${runner_labels}"
+RUNNER_NAME="${runner_name}"
+RUNNER_VERSION="2.321.0"
+TF_VERSION="1.10.5"
+KUBECTL_VERSION="v1.31.0"
+
+# --- tools ---
+dnf install -y git jq tar gzip unzip libicu
+
+curl -sSL -o /tmp/tf.zip "https://releases.hashicorp.com/terraform/$${TF_VERSION}/terraform_$${TF_VERSION}_linux_amd64.zip"
+unzip -o /tmp/tf.zip -d /usr/local/bin
+
+curl -sSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/$${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+chmod +x /usr/local/bin/kubectl
+
+curl -sSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# --- runner agent (runs as the unprivileged 'runner' user) ---
+useradd -m -s /bin/bash runner || true
+install -d -o runner -g runner /home/runner/actions-runner
+cd /home/runner/actions-runner
+curl -sSL -o runner.tar.gz \
+  "https://github.com/actions/runner/releases/download/v$${RUNNER_VERSION}/actions-runner-linux-x64-$${RUNNER_VERSION}.tar.gz"
+tar xzf runner.tar.gz && rm -f runner.tar.gz
+chown -R runner:runner /home/runner/actions-runner
+
+# --- registration token from the PAT (short-lived, minted at boot) ---
+PAT="$(aws secretsmanager get-secret-value --region "$${REGION}" --secret-id "$${PAT_SECRET_ARN}" --query SecretString --output text)"
+REG_TOKEN="$(curl -sSL -X POST \
+  -H "Authorization: Bearer $${PAT}" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/$${GH_OWNER}/$${GH_REPO}/actions/runners/registration-token" | jq -r .token)"
+
+# --- configure + run as a systemd service ---
+sudo -u runner ./config.sh \
+  --url "https://github.com/$${GH_OWNER}/$${GH_REPO}" \
+  --token "$${REG_TOKEN}" \
+  --name "$${RUNNER_NAME}" \
+  --labels "$${LABELS}" \
+  --unattended --replace
+./svc.sh install runner
+./svc.sh start

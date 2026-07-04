@@ -121,6 +121,24 @@ module "msk" {
   tags = local.common_tags
 }
 
+# ---------------------------------------------------------------------------
+# Self-hosted GitHub Actions runner in the VPC. Egress = the NAT EIP already
+# allow-listed on the EKS public endpoint, so terraform-plan/apply can reach the
+# cluster API to manage ArgoCD (manage_argocd). Off by default.
+# ---------------------------------------------------------------------------
+module "github_runner" {
+  source = "./modules/github_runner"
+  count  = var.enable_self_hosted_runner ? 1 : 0
+
+  name         = local.name
+  vpc_id       = module.vpc.vpc_id
+  subnet_ids   = module.vpc.private_subnet_ids
+  github_owner = var.github_owner
+  github_repo  = var.github_repo
+
+  tags = local.common_tags
+}
+
 # ECR lives in the bootstrap stack now (terraform/bootstrap); look it up by name
 # so the training/iam role can still be scoped to it. Bootstrap must be applied
 # first (it is — it's the manual one-shot that also creates the CI roles).
@@ -371,6 +389,7 @@ module "addons" {
   enable_managed_prometheus  = var.enable_managed_prometheus
   enable_xray_tracing        = var.enable_xray_tracing
   manage_incluster_addons    = var.manage_incluster_addons
+  manage_argocd              = var.manage_argocd
 
   aws_lb_controller_chart_version = var.aws_lb_controller_chart_version
   external_dns_chart_version      = var.external_dns_chart_version

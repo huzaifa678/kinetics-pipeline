@@ -28,7 +28,7 @@ env:
 
 jobs:
   plan:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, vpc] # VPC runner: reaches the VPN-locked EKS API (manage_argocd)
     defaults:
       run:
         working-directory: terraform

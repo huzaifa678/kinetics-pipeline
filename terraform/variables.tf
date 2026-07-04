@@ -197,6 +197,12 @@ variable "ecr_repository_name" {
   default     = "kinetics-training"
 }
 
+variable "enable_self_hosted_runner" {
+  description = "Create a self-hosted GitHub Actions runner in the VPC so CI can reach the VPN-locked EKS API (needed for manage_argocd). Requires github_owner/github_repo."
+  type        = bool
+  default     = false
+}
+
 # The OIDC provider + CI roles live in the bootstrap stack now; the main stack
 # only references the provider ARN to trust it (e.g. the frontend-deploy role).
 variable "github_oidc_provider_arn" {
@@ -347,7 +353,13 @@ variable "enable_argocd" {
 }
 
 variable "manage_incluster_addons" {
-  description = "Let Terraform manage in-cluster Helm/K8s workloads (ArgoCD, cert-manager, LB controller, external-dns, HyperPod operator addons). Set false when applying from CI against a VPN-locked EKS API; bootstrap ArgoCD out-of-band and let GitOps own them. AWS-API resources are unaffected."
+  description = "Let Terraform manage the in-cluster APP layer (cert-manager, LB controller, external-dns, HyperPod operator addons). Set false to let GitOps own them. ArgoCD itself is gated separately by manage_argocd. AWS-API resources are unaffected."
+  type        = bool
+  default     = true
+}
+
+variable "manage_argocd" {
+  description = "Let Terraform manage the ArgoCD bootstrap layer (ArgoCD Helm release + in-cluster env Secret + app-of-apps). Requires cluster API reachability (enable_self_hosted_runner). When false, bootstrap ArgoCD out-of-band (gitops/bootstrap)."
   type        = bool
   default     = true
 }

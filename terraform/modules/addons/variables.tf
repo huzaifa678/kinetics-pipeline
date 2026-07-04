@@ -4,7 +4,13 @@ variable "cluster_name" {
 }
 
 variable "manage_incluster_addons" {
-  description = "Manage in-cluster workloads (ArgoCD, cert-manager, LB controller, external-dns + the cert-manager-dependent HyperPod operator addons) from Terraform. Set false when applying from CI against a VPN-locked EKS API — bootstrap ArgoCD out-of-band and let GitOps own them. AWS-API resources (Pod Identity, IAM) are unaffected."
+  description = "Manage the in-cluster APP layer (cert-manager, LB controller, external-dns + the cert-manager-dependent HyperPod operator addons) from Terraform. Set false to let GitOps own them. AWS-API resources (Pod Identity, IAM) are unaffected. ArgoCD itself is gated separately by manage_argocd."
+  type        = bool
+  default     = true
+}
+
+variable "manage_argocd" {
+  description = "Manage the ArgoCD bootstrap layer (ArgoCD Helm release, the in-cluster env Secret, and the app-of-apps) from Terraform. Requires cluster API reachability (the VPC self-hosted runner). When false, ArgoCD is bootstrapped out-of-band (gitops/bootstrap). Independent of manage_incluster_addons, which stays false for the app layer."
   type        = bool
   default     = true
 }
