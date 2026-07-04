@@ -1,7 +1,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TF="$ROOT/terraform"
+TF="$ROOT/terraform/infra"
 CD_REPO="${CD_REPO:-$(cd "$ROOT/.." && pwd)/Kinetics-CD}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
 

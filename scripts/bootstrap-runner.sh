@@ -4,17 +4,19 @@ ENVIRONMENT="${ENVIRONMENT:-prod}"
 PROJECT="${PROJECT:-kinetics-pipeline}"
 REGION="${REGION:-us-east-1}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TF="$ROOT/terraform"
+TF="$ROOT/terraform/runner"
 NAME="${PROJECT}-${ENVIRONMENT}"
 SECRET_ID="${NAME}-gha-runner-pat"
 ASG="${NAME}-gha-runner"
 
 : "${RUNNER_PAT:?set RUNNER_PAT to a GitHub token with repo Administration read/write}"
 
-echo "==> 1/3 apply runner module (profile: $ENVIRONMENT)"
-terraform -chdir="$TF" apply \
-  -var-file="terraform.tfvars.${ENVIRONMENT}" \
-  -target=module.vpc -target=module.github_runner -auto-approve -input=false
+# The runner is its own state layer (terraform/runner), reading the VPC from the
+# infra layer's remote state — so this is a clean, un-targeted apply (no -target).
+# The infra layer's VPC must already exist (its remote-state outputs are read here).
+echo "==> 1/3 apply the runner layer (name from infra remote_state)"
+terraform -chdir="$TF" init -input=false >/dev/null
+terraform -chdir="$TF" apply -auto-approve -input=false
 
 echo "==> 2/3 store the PAT in Secrets Manager ($SECRET_ID)"
 aws secretsmanager put-secret-value --region "$REGION" \

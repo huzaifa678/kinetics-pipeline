@@ -10,7 +10,7 @@ TAG="${TAG:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo latest)}
 LOCAL_IMAGE="${LOCAL_IMAGE:-kinetics-training}"
 
 if [ -z "${ECR_REPOSITORY:-}" ]; then
-  ECR_REPOSITORY="$(terraform -chdir="$ROOT/terraform" output -raw ecr_repository_url 2>/dev/null || true)"
+  ECR_REPOSITORY="$(terraform -chdir="$ROOT/terraform/infra" output -raw ecr_repository_url 2>/dev/null || true)"
 fi
 
 if [ "${PUSH:-0}" = "1" ]; then

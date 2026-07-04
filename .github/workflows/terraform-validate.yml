@@ -17,9 +17,12 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        layer: [infra, cluster, runner] # separate state layers since the split
     defaults:
       run:
-        working-directory: terraform
+        working-directory: terraform/${{ matrix.layer }}
     steps:
       - uses: actions/checkout@v4
 

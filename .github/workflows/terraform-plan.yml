@@ -29,9 +29,13 @@ env:
 jobs:
   plan:
     runs-on: [self-hosted, vpc] # VPC runner: reaches the VPN-locked EKS API (manage_argocd)
+    strategy:
+      fail-fast: false
+      matrix:
+        layer: [infra, cluster] # two root modules since the state-layer split
     defaults:
       run:
-        working-directory: terraform
+        working-directory: terraform/${{ matrix.layer }}
     steps:
       - uses: actions/checkout@v4
 
@@ -52,10 +56,13 @@ jobs:
             kafka) files="-var-file=terraform.tfvars.dev -var-file=terraform.tfvars.kafka" ;;
             *) echo "::error::unknown profile '$PROFILE'"; exit 1 ;;
           esac
+          # Keep only var-files that exist in THIS layer — the cluster layer
+          # legitimately relies on module defaults for some envs (no tfvars file).
+          kept=""
           for f in $(echo "$files" | tr ' ' '\n' | sed 's/-var-file=//'); do
-            [ -f "$f" ] || { echo "::error::missing var-file $f"; exit 1; }
+            if [ -f "$f" ]; then kept="$kept -var-file=$f"; else echo "::notice::${{ matrix.layer }}: no $f (using defaults)"; fi
           done
-          echo "var_files=$files" >> "$GITHUB_OUTPUT"
+          echo "var_files=$kept" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -84,10 +91,11 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            let plan = fs.readFileSync('terraform/plan.txt', 'utf8');
+            const layer = '${{ matrix.layer }}';
+            let plan = fs.readFileSync(`terraform/${layer}/plan.txt`, 'utf8');
             const max = 60000;
             if (plan.length > max) plan = plan.slice(0, max) + '\n... (truncated)';
-            const body = `### Terraform Plan\n\`\`\`\n${plan}\n\`\`\``;
+            const body = `### Terraform Plan — \`${layer}\`\n\`\`\`\n${plan}\n\`\`\``;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,

@@ -7,7 +7,7 @@ PROJECT="${PROJECT:-kinetics-pipeline}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
 
 if [ -z "${DATA_BUCKET:-}" ]; then
-  DATA_BUCKET="$(terraform -chdir="$ROOT/terraform" output -raw data_bucket 2>/dev/null || true)"
+  DATA_BUCKET="$(terraform -chdir="$ROOT/terraform/infra" output -raw data_bucket 2>/dev/null || true)"
 fi
 if [ -z "${DATA_BUCKET:-}" ] && command -v aws >/dev/null; then
   ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"

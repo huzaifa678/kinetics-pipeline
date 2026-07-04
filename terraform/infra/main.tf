@@ -123,25 +123,9 @@ module "msk" {
   tags = local.common_tags
 }
 
-# ---------------------------------------------------------------------------
-# Self-hosted GitHub Actions runner in the VPC. Egress = the NAT EIP already
-# allow-listed on the EKS public endpoint, so terraform-plan/apply can reach the
-# cluster API to manage ArgoCD (manage_argocd). Off by default.
-# ---------------------------------------------------------------------------
-module "github_runner" {
-  source = "./modules/github_runner"
-  count  = var.enable_self_hosted_runner ? 1 : 0
-
-  name         = local.name
-  vpc_id       = module.vpc.vpc_id
-  subnet_ids   = module.vpc.private_subnet_ids
-  github_owner = var.github_owner
-  github_repo  = var.github_repo
-
-  tags = local.common_tags
-
-  depends_on = [module.vpc]
-}
+# The self-hosted GitHub Actions runner is its own chicken-egg bootstrap layer
+# (terraform/runner) — CI can't create the runner CI runs on. It reads this
+# layer's vpc_id + private_subnet_ids via remote_state. See scripts/bootstrap-runner.sh.
 
 # ECR lives in the bootstrap stack now (terraform/bootstrap); look it up by name
 # so the training/iam role can still be scoped to it. Bootstrap must be applied
@@ -355,91 +339,6 @@ module "cost" {
   gpu_instance_group     = module.hyperpod.gpu_instance_group_name
 
   tags = local.common_tags
-}
-
-# ---------------------------------------------------------------------------
-# CI-deployer RBAC (terraform/rbac/ci-deployer.yaml) applied via the kubectl
-# provider, so it's TF-managed rather than a manual kubectl apply. It's the
-# authorization behind the deployer access entry (var.cluster_deployer_principal_arns)
-# and MUST exist before module.addons installs argocd. Gated on manage_argocd +
-# at least one deployer principal. Bootstrap caveat: the FIRST apply that creates
-# this must run as a cluster admin (the runner/deployer can't self-grant — see
-# the module).
-# ---------------------------------------------------------------------------
-module "ci_deployer_rbac" {
-  source = "./modules/ci_deployer_rbac"
-  count  = var.manage_argocd && length(var.cluster_deployer_principal_arns) > 0 ? 1 : 0
-
-  # abspath so file() resolves the same regardless of which module reads it.
-  manifest_path = abspath("${path.module}/rbac/ci-deployer.yaml")
-
-  depends_on = [module.eks]
-}
-
-# ---------------------------------------------------------------------------
-# In-cluster add-ons via Helm: Karpenter, ACK SageMaker controller,
-# DCGM/Prometheus GPU monitoring, and (optionally) ArgoCD for GitOps.
-# ---------------------------------------------------------------------------
-module "addons" {
-  source = "./modules/addons"
-
-  cluster_name = module.eks.cluster_name
-  environment  = var.environment
-
-  ack_sagemaker_role_arn = module.iam.ack_sagemaker_role_arn
-  karpenter_role_arn     = module.iam.karpenter_role_arn
-  etl_shards_role_arn    = module.iam.etl_shards_role_arn
-  image_updater_role_arn = module.iam.image_updater_role_arn
-
-  enable_argocd            = var.enable_argocd
-  enable_hyperpod_operator = var.enable_hyperpod_operator
-  # Operator add-on's controller can only run on a HyperPod node, so it must wait
-  # for the HyperPod cluster (its system group) — passing the ARN creates that
-  # edge without blocking ArgoCD/cert-manager.
-  hyperpod_cluster_arn = module.hyperpod.cluster_arn
-  gitops_repo_url      = var.gitops_repo_url
-  gitops_repo_revision = var.gitops_repo_revision
-
-  region                     = var.region
-  vpc_id                     = module.vpc.vpc_id
-  enable_aws_lb_controller   = var.enable_aws_lb_controller
-  enable_external_dns        = var.enable_external_dns
-  aws_lbc_role_arn           = module.iam.aws_lbc_role_arn
-  external_dns_role_arn      = module.iam.external_dns_role_arn
-  external_dns_domain_filter = var.inference_domain_name
-  amp_remote_write_role_arn  = module.iam.amp_remote_write_role_arn
-  otel_xray_role_arn         = module.iam.otel_xray_role_arn
-  enable_managed_prometheus  = var.enable_managed_prometheus
-  enable_xray_tracing        = var.enable_xray_tracing
-  manage_incluster_addons    = var.manage_incluster_addons
-  manage_argocd              = var.manage_argocd
-
-  aws_lb_controller_chart_version = var.aws_lb_controller_chart_version
-  external_dns_chart_version      = var.external_dns_chart_version
-
-  tags = local.common_tags
-
-  # ci_deployer_rbac must exist before argocd install so the deployer role is
-  # authorized for manage_argocd. module.eks stays for the access entries + cluster.
-  depends_on = [module.eks, module.ci_deployer_rbac]
-}
-
-# ---------------------------------------------------------------------------
-# Advisory check : warn if the ArgoCD-managed HyperPod
-# dependency chart (training operators + health-monitoring-agent, synced by
-# gitops/apps/hyperpod-dependencies.yaml) isn't Synced+Healthy — the SageMaker
-# HyperPod cluster needs it before it will create. Non-blocking (emits a warning,
-# never fails apply) and introduces no cycle: it only reads live cluster state,
-# referencing nothing from module.hyperpod. Count-gated on manage_argocd so it
-# only evaluates where TF can reach the cluster API (prod / VPC runner); a hard
-# blocking gate is impossible here because module.addons -> module.hyperpod
-# already exists.
-# ---------------------------------------------------------------------------
-module "hyperpod_deps_check" {
-  source = "./modules/hyperpod_deps_check"
-  count  = var.manage_argocd ? 1 : 0
-
-  depends_on = [module.addons]
 }
 
 # ---------------------------------------------------------------------------

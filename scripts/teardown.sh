@@ -3,10 +3,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TF_DIR="$ROOT/terraform"
+TF_DIR="$ROOT/terraform/infra"
+CLUSTER_DIR="$ROOT/terraform/cluster"
 VAR_FILE="${VAR_FILE:-terraform.tfvars.dev}"
 ECR_REPO_NAME="${ECR_REPO_NAME:-kinetics-training}"
 tf() { terraform -chdir="$TF_DIR" "$@"; }
+tfc() { terraform -chdir="$CLUSTER_DIR" "$@"; }
 
 command -v terraform >/dev/null || { echo "terraform required"; exit 1; }
 command -v aws       >/dev/null || { echo "aws CLI required"; exit 1; }
@@ -18,6 +20,19 @@ if [ "${AUTO_APPROVE:-0}" != "1" ]; then
   echo "    This EMPTIES all S3 buckets in state and DESTROYS the stack — irreversible."
   read -rp "    Type 'destroy' to continue: " ans
   [ "$ans" = "destroy" ] || { echo "aborted"; exit 1; }
+fi
+
+echo "==> [0/4] Destroy the CLUSTER layer first (in-cluster: argocd, RBAC, addons)"
+# Must go before the infra destroy: the cluster layer's providers read the live
+# EKS endpoint from infra's remote state, so tear it down while the cluster is
+# still up (on the VPN). Uses the cluster tfvars if present, else module defaults.
+if [ -d "$CLUSTER_DIR" ]; then
+  cvar=""
+  [ -f "$CLUSTER_DIR/$VAR_FILE" ] && cvar="-var-file=$VAR_FILE"
+  tfc destroy $cvar -auto-approve || {
+    echo "    cluster destroy failed (on the VPN? cluster already gone?)."
+    echo "    If the layer is empty/irrelevant, continue; otherwise fix and re-run."
+  }
 fi
 
 echo "==> [1/4] Karpenter node check"

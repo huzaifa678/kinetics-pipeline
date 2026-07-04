@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REGION="${REGION:-us-east-1}"
-TFDIR="$(cd "$(dirname "$0")/../terraform" && pwd)"
+TFDIR="$(cd "$(dirname "$0")/../terraform/infra" && pwd)"
 # Cluster name = <project>-<environment>; resolve from terraform output so it
 # tracks whatever was applied (dev/test/...), falling back to the dev default.
 CLUSTER="${CLUSTER:-$(terraform -chdir="$TFDIR" output -raw eks_cluster_name 2>/dev/null || echo kinetics-pipeline-dev)}"
@@ -44,7 +44,7 @@ fi
 if [ -z "$EP" ] || [ "$EP" = "None" ]; then
   echo "No available Client VPN endpoint found in $REGION." >&2
   echo "Deploy it first:" >&2
-  echo "  terraform -chdir=$TFDIR apply -target=module.vpc -target=module.eks -target=module.client_vpn -var-file=terraform.tfvars.dev" >&2
+  echo "  terraform -chdir=$TFDIR apply -var-file=terraform.tfvars.dev  # infra layer creates the VPN" >&2
   exit 1
 fi
 echo "Client VPN endpoint: $EP"

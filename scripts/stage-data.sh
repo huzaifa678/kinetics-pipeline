@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TF_DIR="$ROOT/terraform"
+TF_DIR="$ROOT/terraform/infra"
 PREFIX="${PREFIX:-kinetics400}"
 # Persistent dataset bucket, OUTSIDE the Terraform stack (survives destroy/teardown).
 ARCHIVE_BUCKET="${ARCHIVE_BUCKET:-kinetics-pipeline-archive}"

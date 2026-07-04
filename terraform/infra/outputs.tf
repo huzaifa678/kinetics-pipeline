@@ -13,6 +13,68 @@ output "eks_cluster_endpoint" {
   value       = module.eks.cluster_endpoint
 }
 
+# ---------------------------------------------------------------------------
+# Consumed by the CLUSTER layer (terraform/cluster) via terraform_remote_state:
+# provider auth (CA) + everything module.addons/argocd needs that this layer
+# creates (IAM role ARNs, cluster/hyperpod ARNs, the enable flags that gate both
+# the IAM roles here and the Pod Identity associations there).
+# ---------------------------------------------------------------------------
+output "eks_cluster_certificate_authority_data" {
+  description = "Base64 cluster CA — for the cluster layer's kubernetes/helm/kubectl provider auth."
+  value       = module.eks.cluster_certificate_authority_data
+}
+
+output "environment" {
+  description = "Environment name (stamped on the ArgoCD in-cluster Secret label by the cluster layer)."
+  value       = var.environment
+}
+
+output "vpc_id" {
+  description = "VPC ID (AWS Load Balancer Controller provisions ALBs here; the runner layer launches the runner here)."
+  value       = module.vpc.vpc_id
+}
+
+output "name" {
+  description = "Resource name prefix (<project>-<environment>) — used by the runner layer."
+  value       = local.name
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet IDs — the runner layer places the self-hosted runner ASG here (NAT egress)."
+  value       = module.vpc.private_subnet_ids
+}
+
+output "hyperpod_cluster_arn" {
+  description = "HyperPod cluster ARN — gates the operator EKS add-on in the cluster layer."
+  value       = module.hyperpod.cluster_arn
+}
+
+output "external_dns_domain_filter" {
+  description = "Domain external-dns is restricted to (the inference FQDN; empty = unrestricted)."
+  value       = var.inference_domain_name
+}
+
+# Pod Identity role ARNs (module.iam) the cluster layer's addons associate to SAs.
+output "ack_sagemaker_role_arn" { value = module.iam.ack_sagemaker_role_arn }
+output "karpenter_role_arn" { value = module.iam.karpenter_role_arn }
+output "etl_shards_role_arn" { value = module.iam.etl_shards_role_arn }
+output "image_updater_role_arn" { value = module.iam.image_updater_role_arn }
+output "aws_lbc_role_arn" { value = module.iam.aws_lbc_role_arn }
+output "external_dns_role_arn" { value = module.iam.external_dns_role_arn }
+output "amp_remote_write_role_arn" { value = module.iam.amp_remote_write_role_arn }
+output "otel_xray_role_arn" { value = module.iam.otel_xray_role_arn }
+
+# Enable flags that gate BOTH the IAM roles here and the Pod Identity
+# associations in the cluster layer — output so the two layers can't drift.
+output "enable_aws_lb_controller" { value = var.enable_aws_lb_controller }
+output "enable_external_dns" { value = var.enable_external_dns }
+output "enable_managed_prometheus" { value = var.enable_managed_prometheus }
+output "enable_xray_tracing" { value = var.enable_xray_tracing }
+
+# The CI deployer principals (also mapped to the ci-deployers access entry here);
+# the cluster layer reads this to gate module.ci_deployer_rbac without duplication.
+output "cluster_deployer_principal_arns" { value = var.cluster_deployer_principal_arns }
+
 output "configure_kubectl" {
   description = "Run this to point kubectl at the cluster."
   value       = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks.cluster_name}"

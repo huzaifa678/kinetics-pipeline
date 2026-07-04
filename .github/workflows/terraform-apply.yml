@@ -38,7 +38,7 @@ jobs:
     runs-on: [self-hosted, vpc] # VPC runner: reaches the VPN-locked EKS API (manage_argocd)
     defaults:
       run:
-        working-directory: terraform
+        working-directory: terraform/infra
     steps:
       - uses: actions/checkout@v4
 
@@ -94,7 +94,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
-          path: terraform/tfplan
+          path: terraform/infra/tfplan
           retention-days: 1
           if-no-files-found: error
 
@@ -108,7 +108,7 @@ jobs:
     environment: ${{ github.event.inputs.environment || 'dev' }}
     defaults:
       run:
-        working-directory: terraform
+        working-directory: terraform/infra
     steps:
       - uses: actions/checkout@v4
 
@@ -116,7 +116,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: tfplan
-          path: terraform
+          path: terraform/infra
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -141,3 +141,44 @@ jobs:
       # from the cluster's `environment` label (stamped from var.environment).
       - name: Apply
         run: terraform apply -input=false -lock-timeout=120s tfplan
+
+  # 3) CLUSTER layer (kubernetes/helm/kubectl). MUST run after the infra apply —
+  #    its providers read the infra layer's fresh remote state. Not a saved plan:
+  #    the cluster plan depends on infra's just-applied outputs, so it plans+applies
+  #    here. Same env gate + tf-apply role. First-ever run must be an admin on the
+  #    VPN (ci-deployer RBAC escalation) — see scripts/bootstrap-cluster-access.sh.
+  cluster_apply:
+    needs: apply
+    runs-on: [self-hosted, vpc]
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    defaults:
+      run:
+        working-directory: terraform/cluster
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve cluster tfvars (optional — defaults if absent)
+        id: profile
+        env:
+          PROFILE: ${{ github.event.inputs.environment || 'dev' }}
+        run: |
+          f="terraform.tfvars.${PROFILE}"
+          if [ -f "$f" ]; then echo "var_files=-var-file=$f" >> "$GITHUB_OUTPUT";
+          else echo "::notice::cluster: no $f (using defaults)"; echo "var_files=" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TF_APPLY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "${{ env.TF_VERSION }}"
+          terraform_wrapper: false
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Apply
+        run: terraform apply ${{ steps.profile.outputs.var_files }} -input=false -lock-timeout=120s -auto-approve
