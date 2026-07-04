@@ -402,6 +402,24 @@ module "addons" {
 }
 
 # ---------------------------------------------------------------------------
+# Advisory check : warn if the ArgoCD-managed HyperPod
+# dependency chart (training operators + health-monitoring-agent, synced by
+# gitops/apps/hyperpod-dependencies.yaml) isn't Synced+Healthy — the SageMaker
+# HyperPod cluster needs it before it will create. Non-blocking (emits a warning,
+# never fails apply) and introduces no cycle: it only reads live cluster state,
+# referencing nothing from module.hyperpod. Count-gated on manage_argocd so it
+# only evaluates where TF can reach the cluster API (prod / VPC runner); a hard
+# blocking gate is impossible here because module.addons -> module.hyperpod
+# already exists.
+# ---------------------------------------------------------------------------
+module "hyperpod_deps_check" {
+  source = "./modules/hyperpod_deps_check"
+  count  = var.manage_argocd ? 1 : 0
+
+  depends_on = [module.addons]
+}
+
+# ---------------------------------------------------------------------------
 # Inference HTTPS endpoint: a public ACM cert (DNS-validated against the
 # provided Route53 zone) consumed by the internal ALB Ingress. The A-record to
 # the ALB is created by external-dns (the ALB name isn't known at apply time).
