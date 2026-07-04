@@ -137,6 +137,8 @@ module "github_runner" {
   github_repo  = var.github_repo
 
   tags = local.common_tags
+
+  depends_on = [module.vpc]
 }
 
 # ECR lives in the bootstrap stack now (terraform/bootstrap); look it up by name
