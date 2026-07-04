@@ -26,9 +26,6 @@ permissions:
 env:
   TF_VERSION: "1.10.5"
 
-# Single global lock: all profiles share ONE terraform state (one backend key),
-# so applies must never run concurrently regardless of selected profile. This
-# also guarantees the state can't change between the plan and apply jobs below.
 concurrency:
   group: terraform-apply
   cancel-in-progress: false
@@ -75,6 +72,7 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "${{ env.TF_VERSION }}"
+          terraform_wrapper: false
 
       - name: Init
         run: terraform init -input=false
@@ -129,6 +127,11 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "${{ env.TF_VERSION }}"
+          # Self-hosted runner has no system `node` on PATH; the default wrapper
+          # is a node shim around `terraform` and fails every run step with
+          # `env: node: No such file or directory`. We don't consume the wrapper's
+          # step outputs, so disable it.
+          terraform_wrapper: false
 
       - name: Init
         run: terraform init -input=false
