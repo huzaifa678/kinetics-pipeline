@@ -63,6 +63,18 @@ variable "cluster_admin_principal_arns" {
   default     = []
 }
 
+variable "cluster_deployer_principal_arns" {
+  description = <<-EOT
+    IAM principal ARNs (e.g. the CI apply role) granted a NON-admin EKS access
+    entry mapped to the k8s group `kinetics:ci-deployers`. Authorization comes
+    from the out-of-band `ci-deployer` ClusterRole bound to that group
+    (terraform/rbac/ci-deployer.yaml) — the least privilege that can still
+    `helm install` argocd for manage_argocd, without cluster-admin.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "enable_hyperpod_operator" {
   description = "Install the SageMaker HyperPod training operator EKS add-on. Set false for a minimal EKS-only test cluster."
   type        = bool

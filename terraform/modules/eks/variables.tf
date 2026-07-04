@@ -40,6 +40,25 @@ variable "cluster_admin_principal_arns" {
   default     = []
 }
 
+variable "cluster_deployer_principal_arns" {
+  description = <<-EOT
+    IAM principal ARNs (e.g. the CI apply role) that get a NON-admin access entry
+    mapped to the k8s group `kinetics:ci-deployers`. No AWS-managed access policy
+    is attached — authorization comes from the out-of-band `ci-deployer`
+    ClusterRole bound to that group (terraform/rbac/ci-deployer.yaml). This is the
+    minimum that can still `helm install` argocd (which creates CRDs + cluster
+    RBAC) without granting cluster-admin.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "deployer_group" {
+  description = "Kubernetes group the deployer access entries map to; the ci-deployer ClusterRoleBinding must bind this exact group."
+  type        = string
+  default     = "kinetics:ci-deployers"
+}
+
 variable "cluster_endpoint_public_access_cidrs" {
   description = <<-EOT
     CIDR blocks allowed to reach the public EKS API endpoint. The root passes the

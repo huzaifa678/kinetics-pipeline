@@ -43,7 +43,8 @@ module "eks" {
   system_node_instance_type = var.system_node_instance_type
   system_node_desired_size  = var.system_node_desired_size
 
-  cluster_admin_principal_arns = var.cluster_admin_principal_arns
+  cluster_admin_principal_arns    = var.cluster_admin_principal_arns
+  cluster_deployer_principal_arns = var.cluster_deployer_principal_arns
 
   # Lock the public EKS API endpoint to the VPC NAT gateway's Elastic IP — the
   # egress IP for AWS Client VPN clients routed through this VPC — plus any extra

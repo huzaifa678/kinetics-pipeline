@@ -16,19 +16,34 @@ module "eks" {
   authentication_mode                      = "API"
   enable_cluster_creator_admin_permissions = false
 
-  access_entries = {
-    for idx, arn in var.cluster_admin_principal_arns : "cluster-admin-${idx}" => {
-      principal_arn = arn
-      policy_associations = {
-        cluster_admin = {
-          policy_arn = "arn:${data.aws_partition.current.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-          access_scope = {
-            type = "cluster"
+  access_entries = merge(
+    # Full cluster-admin (break-glass humans / the state owner).
+    {
+      for idx, arn in var.cluster_admin_principal_arns : "cluster-admin-${idx}" => {
+        principal_arn = arn
+        policy_associations = {
+          cluster_admin = {
+            policy_arn = "arn:${data.aws_partition.current.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+            access_scope = {
+              type = "cluster"
+            }
           }
         }
       }
-    }
-  }
+    },
+    # CI deployer: mapped to a k8s group ONLY — no AWS-managed access policy, so
+    # NOT cluster-admin. Authorization is the out-of-band `ci-deployer` ClusterRole
+    # bound to var.deployer_group (terraform/rbac/ci-deployer.yaml). The access
+    # entry itself is an AWS-API resource, so the runner can create it without
+    # cluster access; it just needs the ClusterRoleBinding to already exist.
+    {
+      for idx, arn in var.cluster_deployer_principal_arns : "ci-deployer-${idx}" => {
+        principal_arn       = arn
+        kubernetes_groups   = [var.deployer_group]
+        policy_associations = {}
+      }
+    },
+  )
 
   # Let on-VPN clients reach the cluster API SG (private endpoint) on 443.
   # AWS Client VPN source-NATs client traffic to its ENI IP in the associated
