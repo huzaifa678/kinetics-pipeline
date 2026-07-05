@@ -22,9 +22,11 @@ aws sts get-caller-identity --query Arn --output text
 
 echo
 echo "==> phase 1/2: INFRA layer (vpc, eks + tiered access entries, client_vpn, ...)"
-echo "    AWS-API only, no VPN needed. Review the plan for stray destroys."
+echo "    AWS-API only, no VPN needed. enable_hyperpod=false so this applies CLEAN —"
+echo "    the SageMaker cluster can't create until ArgoCD (cluster layer) installs its"
+echo "    deps chart (gotcha #1). Review the plan for stray destroys."
 terraform -chdir="$INFRA" init -input=false >/dev/null
-terraform -chdir="$INFRA" apply -var-file="$VARFILE"
+terraform -chdir="$INFRA" apply -var-file="$VARFILE" -var="enable_hyperpod=false"
 
 echo
 echo "==> connect to the Client VPN now (SAML + split-DNS), in another shell:"
@@ -41,4 +43,8 @@ terraform -chdir="$CLUSTER" apply $cvar
 
 echo
 echo "Done. tf-plan (viewer) + tf-apply (ci-deployers group) are authorized on the"
-echo "cluster, and ArgoCD is bootstrapped. Re-run the CI pipeline / main applies."
+echo "cluster, and ArgoCD is bootstrapped."
+echo
+echo "NEXT: once ArgoCD shows the 'hyperpod-dependencies' Application Synced+Healthy,"
+echo "bring HyperPod up (default enable_hyperpod=true):"
+echo "  terraform -chdir=$INFRA apply -var-file=$VARFILE"

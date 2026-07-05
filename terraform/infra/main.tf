@@ -280,6 +280,8 @@ module "storage" {
 # ---------------------------------------------------------------------------
 module "hyperpod" {
   source = "./modules/hyperpod"
+  # Gated on enable_hyperpod so the infra is applied cleanly before ArgoCD install the hyperpod dependency charts
+  count = var.enable_hyperpod ? 1 : 0
 
   name               = local.name
   eks_cluster_arn    = module.eks.cluster_arn
@@ -335,8 +337,8 @@ module "cost" {
   # consolidation). The auto-stop Lambda would call UpdateCluster and fight
   # Karpenter — possibly killing a live run — so disable it in that mode.
   auto_stop_idle_minutes = var.enable_gpu_autoscaling ? 0 : var.auto_stop_idle_minutes
-  hyperpod_cluster_name  = module.hyperpod.cluster_name
-  gpu_instance_group     = module.hyperpod.gpu_instance_group_name
+  hyperpod_cluster_name  = var.enable_hyperpod ? module.hyperpod[0].cluster_name : ""
+  gpu_instance_group     = var.enable_hyperpod ? module.hyperpod[0].gpu_instance_group_name : ""
 
   tags = local.common_tags
 }

@@ -35,15 +35,13 @@ jobs:
   #    tf-plan role — no write creds needed to produce a plan. Ungated so it runs
   #    immediately; the human gate is on the apply job.
   plan:
-    runs-on: [self-hosted, vpc] # VPC runner: reaches the VPN-locked EKS API (manage_argocd)
+    runs-on: ubuntu-latest # infra is AWS-API only — no self-hosted/VPN runner needed
     defaults:
       run:
         working-directory: terraform/infra
     steps:
       - uses: actions/checkout@v4
 
-      # Map the selected profile -> the -var-file chain. dev/prod/test are
-      # standalone; novpn/kafka layer on top of dev (later var-file wins).
       - name: Resolve tfvars profile
         id: profile
         env:
@@ -104,7 +102,7 @@ jobs:
   #    drifted out-of-band, `apply tfplan` fails on a stale plan (safe).
   apply:
     needs: plan
-    runs-on: [self-hosted, vpc] # VPC runner: reaches the VPN-locked EKS API (manage_argocd)
+    runs-on: ubuntu-latest # infra is AWS-API only — no self-hosted/VPN runner needed
     environment: ${{ github.event.inputs.environment || 'dev' }}
     defaults:
       run:
@@ -149,7 +147,7 @@ jobs:
   #    VPN (ci-deployer RBAC escalation) — see scripts/bootstrap-cluster-access.sh.
   cluster_apply:
     needs: apply
-    runs-on: [self-hosted, vpc]
+    runs-on: [self-hosted, vpc] # ONLY layer that needs the VPN-locked K8s API
     environment: ${{ github.event.inputs.environment || 'dev' }}
     defaults:
       run:

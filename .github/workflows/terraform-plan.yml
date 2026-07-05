@@ -28,11 +28,17 @@ env:
 
 jobs:
   plan:
-    runs-on: [self-hosted, vpc] # VPC runner: reaches the VPN-locked EKS API (manage_argocd)
+    # infra is AWS-API only → hosted; only the cluster layer refreshes K8s state,
+    # so it needs the self-hosted VPC runner.
+    runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
       matrix:
-        layer: [infra, cluster] # two root modules since the state-layer split
+        include:
+          - layer: infra
+            runs_on: ubuntu-latest
+          - layer: cluster
+            runs_on: [self-hosted, vpc]
     defaults:
       run:
         working-directory: terraform/${{ matrix.layer }}

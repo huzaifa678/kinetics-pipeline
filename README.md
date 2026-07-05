@@ -10,24 +10,19 @@ Kinetics, with transfer learning) on **SageMaker HyperPod orchestrated by EKS** 
 ## Layout
 
 ```
-terraform/                  # Modular IaC for the whole platform
-  modules/
-    vpc/                    # VPC, subnets, single NAT (cost), Karpenter tags
-    eks/                    # EKS control plane + CPU node group + HyperPod
-                            #   training operator (EKS managed add-on)
-    iam/                    # HyperPod exec role + Pod Identity roles (ACK, Karpenter)
-    karpenter/              # SQS interruption queue + EventBridge rules (Spot-safe)
-    storage/                # S3 (data/checkpoints w/ lifecycle) + FSx for Lustre
-    hyperpod/               # SageMaker HyperPod cluster (EKS orchestrator)
-    cost/                   # Budgets, anomaly detection, auto-stop Lambda
-                            #   (Lambda disabled when GPU autoscaling is on)
-    mlflow/                 # SageMaker-managed MLflow tracking server +
-                            #   artifact bucket (experiment tracking)
-    ecr/                    # Container registry (immutable tags; prevent_destroy)
-    cicd/                   # GitHub Actions OIDC provider + least-privilege roles
-    addons/                 # Bootstrap only: ArgoCD + EKS Pod Identity associations
-    client_vpn/             # AWS Client VPN (SAML/IAM Identity Center), private-subnet
-                            #   associated, egress via NAT (optional, off by default)
+terraform/                  # IaC — split into FOUR state layers (one S3 bucket, 4 keys)
+  bootstrap/                # Applied first, from a laptop. Own state. ECR + GitHub OIDC
+                            #   provider + the CI roles (ecr-push / tf-plan / tf-apply)
+  infra/                    # Layer 1 — AWS-API ONLY (key: terraform.tfstate)
+    modules/                #   vpc, eks (+ tiered access entries), client_vpn, iam,
+                            #   karpenter, storage, hyperpod, msk, cognito, frontend,
+                            #   observability, cost, mlflow. NO kubernetes/helm providers.
+  cluster/                  # Layer 2 — CLUSTER-API (key: cluster.tfstate). kubernetes/
+    modules/                #   helm/kubectl configured from infra's remote_state.
+    rbac/ci-deployer.yaml   #   argocd bootstrap + ci-deployer RBAC + Pod Identity assoc.
+  runner/                   # Layer 3 — self-hosted GitHub Actions runner (key:
+    modules/github_runner/  #   runner.tfstate). Chicken-egg CI prerequisite; reads the
+                            #   VPC from infra remote_state. Applied clean (no -target).
 training/                   # PyTorch CNN-LSTM trainer (modular, no notebooks)
   src/kinetics_trainer/     # config, data, model, engine, checkpoint, distributed
     predictor.py            # backend-agnostic Predictor (shared by both serving paths)
@@ -59,26 +54,56 @@ scripts/
 Makefile                    # make validate / image-* / stage-data / teardown
 ```
 
-## Provision
+## Provision — the Terraform sequence
+
+The stack is **four state layers** applied in order. The split exists because a
+Terraform provider must not be configured from a resource in its own state:
+`infra` is **AWS-API only** (runs anywhere, incl. GitHub-hosted CI), while `cluster`
+uses the `kubernetes`/`helm`/`kubectl` providers configured from `infra`'s
+**remote_state** and only it needs the VPN-locked K8s API. Every layer is a clean,
+**un-targeted** `apply`.
 
 ```bash
-cd terraform
-terraform init
-terraform apply -var-file=terraform.tfvars.dev   # edit emails/region/budget in that file first
-aws eks update-kubeconfig --region <region> --name <cluster>   # from outputs
+# 0. Bootstrap stack (own state): ECR + GitHub OIDC provider + CI roles. Then wire
+#    the repo variables from its outputs.
+cd terraform/bootstrap && terraform init && terraform apply
+ENVIRONMENT=prod ../../scripts/setup-github-ci.sh
+
+# 1+2. Cluster-access bootstrap — ONE command, run by a cluster admin ON THE VPN.
+#    Applies infra (with enable_hyperpod=false so it's a clean apply) → pauses for
+#    you to connect the Client VPN → applies the cluster layer (ci-deployer RBAC +
+#    ArgoCD). No -target, no expected failures.
+RUNNER_PAT=… ENVIRONMENT=prod ../../scripts/bootstrap-cluster-access.sh   # from repo root
+
+# 3. Self-hosted CI runner (its own layer; reads the infra VPC). Seeds the PAT.
+RUNNER_PAT=… ENVIRONMENT=prod ./scripts/bootstrap-runner.sh
+
+# 4. Once ArgoCD shows `hyperpod-dependencies` Synced+Healthy, bring HyperPod up
+#    (default enable_hyperpod=true) — the SageMaker cluster now creates cleanly.
+terraform -chdir=terraform/infra apply -var-file=terraform.tfvars.prod
+
+aws eks update-kubeconfig --region <region> --name <cluster>   # from infra outputs
 ```
 
-> EKS runs **k8s 1.34** (`kubernetes_version`) — a standard-support release
-> ($0.10/hr control plane). Avoid extended-support versions (e.g. 1.30 after
-> 2025-07) which bill **$0.60/hr**. Check current standard versions with
-> `aws eks describe-cluster-versions`.
+For a plain dev bring-up (public cluster, no VPN gymnastics) you can just apply the
+layers in order: `terraform -chdir=terraform/infra apply -var-file=terraform.tfvars.dev`
+→ `terraform -chdir=terraform/cluster apply`. **Steady state runs in CI**:
+`terraform-apply` runs **infra (GitHub-hosted) → cluster (self-hosted VPC runner)`,
+the `cluster_apply` job `needs` the infra apply.
 
-Terraform installs **only** ArgoCD plus the EKS Pod Identity associations.
-Everything else — Karpenter, ACK SageMaker, Prometheus/Grafana, DCGM,
-FSx CSI driver and the training job — is reconciled by ArgoCD from the **GitOps
-delivery repo** (`gitops_repo_url`), automatically once that URL is set. (The
-HyperPod training operator is an EKS managed add-on in the `eks` module, not a
-GitOps app.)
+> **Why `enable_hyperpod=false` first:** the SageMaker HyperPod cluster CREATE fails
+> until ArgoCD (cluster layer) installs its dependency chart — but ArgoCD applies
+> *after* infra. So the first infra apply gates HyperPod off; step 4 flips it on.
+
+> EKS runs **k8s 1.34** (`kubernetes_version`) — a standard-support release
+> ($0.10/hr control plane). Avoid extended-support versions (bill **$0.60/hr**).
+> Check current standard versions with `aws eks describe-cluster-versions`.
+
+The **cluster** layer installs ArgoCD + the EKS Pod Identity associations. Everything
+else — Karpenter, ACK SageMaker, Prometheus/Grafana, DCGM, FSx CSI driver, the
+training job — is reconciled by ArgoCD from the **GitOps delivery repo**
+(`gitops_repo_url`). (The HyperPod training operator EKS add-on is `manage_incluster_addons`
+in the cluster layer, GitOps-owned in prod.)
 
 ### GitOps delivery: the `Kinetics-Continious-Delivery` repo
 
@@ -146,14 +171,14 @@ the intended way in is the optional **AWS Client VPN** (`client_vpn` module,
 
 **Manual prerequisite (not Terraformable):** in IAM Identity Center create a
 custom SAML app for AWS Client VPN (ACS URL `http://127.0.0.1:35001`, audience
-`urn:amazon:webservices:clientvpn`), download its metadata XML into `terraform/`,
+`urn:amazon:webservices:clientvpn`), download its metadata XML into `terraform/infra/`,
 then set `enable_client_vpn = true` and `vpn_saml_metadata_file = "<that file>"`.
 
-> ⚠️ First-apply ordering: the NAT EIP doesn't exist until apply creates it, and
-> the ArgoCD bootstrap runs at the end of the *same* apply via the helm/kubernetes
-> providers. Run the first `terraform apply` **from on the VPN** (reaches the
-> private endpoint), or add the apply host's egress IP to
-> `cluster_endpoint_public_access_cidrs`.
+> ⚠️ Layer ordering: the `infra` apply (AWS-API only) creates the VPC/NAT/EKS/VPN
+> without touching the K8s API, so it needs no VPN. The **`cluster`** layer (ArgoCD +
+> RBAC) does hit the private endpoint, so run its **first** apply **from on the VPN**
+> as a cluster admin (`scripts/bootstrap-cluster-access.sh` orchestrates both), or add
+> the apply host's egress IP to `cluster_endpoint_public_access_cidrs`.
 
 ### Auth: EKS Pod Identity (not IRSA)
 
@@ -353,29 +378,36 @@ init-container pulls the model artifact from S3 and the ServiceMonitor wires
 
 ## CI/CD (GitHub Actions, keyless via OIDC)
 
-`modules/cicd` creates a **GitHub OIDC provider** + three least-privilege roles —
-no static AWS keys. Workflows in `.github/workflows/`:
+The **bootstrap stack** (`terraform/bootstrap`) creates a **GitHub OIDC provider** +
+least-privilege roles (`ecr-push`, `tf-plan`, `tf-apply`) — no static AWS keys.
+Workflows in `.github/workflows/`:
 
-| Workflow | Trigger | Does |
-|---|---|---|
-| `terraform-validate` / `-lint` | PR/push to `terraform/**` | fmt+validate, tflint |
-| `terraform-plan` | PR | OIDC→plan role; comments the plan |
-| `terraform-apply` | push to `main` / dispatch | OIDC→apply role; `production` env approval; `-var-file=terraform.tfvars.dev` |
-| `docker-build` | push to `training/**` | buildx amd64 → ECR: **training** (`sha-<short>`) + **inference** (`serve-<short>`); then ↓ |
-| `update-gitops` | called by build (×2) | App token bumps `image.tag` for the training **and** inference charts in the **delivery repo** |
+| Workflow | Trigger | Runner | Does |
+|---|---|---|---|
+| `terraform-validate` / `-lint` | PR/push to `terraform/**` | hosted | fmt+validate (matrix: infra/cluster/runner), tflint |
+| `terraform-plan` | PR | infra→**hosted**, cluster→**self-hosted** | OIDC→plan role; comments the plan per layer |
+| `terraform-apply` | push to `main` / dispatch | infra→**hosted**, `cluster_apply`→**self-hosted** | infra (saved plan) → then cluster (needs infra); `production` env approval |
+| `docker-build` | push to `training/**` | hosted | buildx amd64 → ECR (`sha-`/`serve-`/`seldon-`); ArgoCD Image Updater bumps tags |
 
-Cross-repo GitOps pushes use a **GitHub App** installation token (not a PAT). Run
-`scripts/setup-github-ci.sh` after `apply` to populate the repo variables/secrets
-from `terraform output`. The `kinetics-training` ArgoCD app is **manual-sync**, so
-a tag bump records the new image without launching a GPU run.
+**Why two runner types:** the `infra` layer is AWS-API only, so it runs on
+GitHub-hosted `ubuntu-latest`; only the `cluster` layer touches the VPN-locked K8s
+API, so it runs on the **self-hosted VPC runner** (the `terraform/runner` layer).
+This dissolves the chicken-egg — nothing that *creates* the runner depends on it.
+
+The `cluster` layer's **first** apply must be run by a cluster admin on the VPN
+(the `ci-deployer` RBAC needs an admin — k8s escalation-prevention); after that CI
+reconciles it. Run `scripts/setup-github-ci.sh` after the bootstrap stack to populate
+repo variables from `terraform output`. The `kinetics-training` ArgoCD app is
+**manual-sync**, so a tag bump never launches a GPU run.
 
 ## Teardown (cost-aware destroy)
 
-`terraform destroy` alone won't finish cleanly: ECR is `prevent_destroy`-fenced,
-S3 buckets have no `force_destroy` (and are versioned), and Karpenter-launched
-nodes aren't Terraform-managed. `scripts/teardown.sh` (`make teardown`) handles
-all three — drains NodeClaims, empties every bucket (incl. versions), `state rm`s
-the ECR repo (kept in AWS unless `DELETE_ECR=1`) — then destroys.
+`terraform destroy` alone won't finish cleanly: the layers must go **cluster →
+infra** (the cluster layer's providers read the live EKS endpoint, so tear it down
+while the cluster is still up — on the VPN), S3 buckets have no `force_destroy` (and
+are versioned), and Karpenter-launched nodes aren't Terraform-managed.
+`scripts/teardown.sh` (`make teardown`) handles it — destroys the cluster layer
+first, drains NodeClaims, empties every bucket (incl. versions), then destroys infra.
 
 ```bash
 make teardown                          # prompts once, then destroys

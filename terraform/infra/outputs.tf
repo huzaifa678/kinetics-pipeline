@@ -45,8 +45,8 @@ output "private_subnet_ids" {
 }
 
 output "hyperpod_cluster_arn" {
-  description = "HyperPod cluster ARN — gates the operator EKS add-on in the cluster layer."
-  value       = module.hyperpod.cluster_arn
+  description = "HyperPod cluster ARN — gates the operator EKS add-on in the cluster layer. Empty when enable_hyperpod=false (cold-start phase)."
+  value       = var.enable_hyperpod ? module.hyperpod[0].cluster_arn : ""
 }
 
 output "external_dns_domain_filter" {
@@ -81,13 +81,13 @@ output "configure_kubectl" {
 }
 
 output "hyperpod_cluster_name" {
-  description = "SageMaker HyperPod cluster name."
-  value       = module.hyperpod.cluster_name
+  description = "SageMaker HyperPod cluster name (null when enable_hyperpod=false)."
+  value       = var.enable_hyperpod ? module.hyperpod[0].cluster_name : null
 }
 
 output "hyperpod_gpu_instance_groups" {
-  description = "GPU instance group names. With autoscaling, copy these into the GitOps HyperpodNodeClass.spec.instanceGroups."
-  value       = module.hyperpod.gpu_instance_group_names
+  description = "GPU instance group names. With autoscaling, copy these into the GitOps HyperpodNodeClass.spec.instanceGroups (null when enable_hyperpod=false)."
+  value       = var.enable_hyperpod ? module.hyperpod[0].gpu_instance_group_names : null
 }
 
 output "gpu_autoscaling_enabled" {
@@ -97,8 +97,8 @@ output "gpu_autoscaling_enabled" {
 
 output "scale_gpus_up_command" {
   description = "Manual GPU scaling command — only relevant when enable_gpu_autoscaling = false. With autoscaling on, Karpenter provisions GPU nodes from pending pods automatically."
-  value = var.enable_gpu_autoscaling ? "GPU autoscaling enabled — submit a HyperPodPyTorchJob and Karpenter provisions nodes; no manual scaling needed." : (
-    "aws sagemaker update-cluster --cluster-name ${module.hyperpod.cluster_name} --region ${var.region}  # set the gpu-training group InstanceCount"
+  value = !var.enable_hyperpod ? "enable_hyperpod=false" : var.enable_gpu_autoscaling ? "GPU autoscaling enabled — submit a HyperPodPyTorchJob and Karpenter provisions nodes; no manual scaling needed." : (
+    "aws sagemaker update-cluster --cluster-name ${module.hyperpod[0].cluster_name} --region ${var.region}  # set the gpu-training group InstanceCount"
   )
 }
 

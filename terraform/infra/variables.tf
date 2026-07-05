@@ -251,6 +251,19 @@ variable "terraform_state_bucket" {
   default     = "kinetics-pipeline-bucket-ec371a2a"
 }
 
+variable "enable_hyperpod" {
+  description = <<-EOT
+    Create the SageMaker HyperPod cluster (module.hyperpod). Default true. Set
+    false for the FIRST infra apply on a cold bring-up: the SageMaker cluster
+    CREATE fails until the ArgoCD-managed HyperPod dependency chart is installed
+    (gotcha #1), and ArgoCD lives in the cluster layer which applies after infra.
+    Bring it up with false, apply the cluster layer, then flip to true + re-apply.
+    The HyperPod execution/autoscaler IAM roles (module.iam) are NOT gated by this.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "enable_gpu_autoscaling" {
   description = <<-EOT
     Use HyperPod's managed Karpenter autoscaling for GPU capacity. When true
