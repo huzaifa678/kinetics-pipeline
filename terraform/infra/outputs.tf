@@ -50,8 +50,8 @@ output "hyperpod_cluster_arn" {
 }
 
 output "external_dns_domain_filter" {
-  description = "Domain external-dns is restricted to (the inference FQDN; empty = unrestricted)."
-  value       = var.inference_domain_name
+  description = "Domain external-dns is restricted to (the effective inference host — api_domain_name in prod, else inference_domain_name; empty = unrestricted)."
+  value       = local.inference_effective_host
 }
 
 # Pod Identity role ARNs (module.iam) the cluster layer's addons associate to SAs.

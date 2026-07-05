@@ -13,6 +13,28 @@ locals {
     local.spa_url != "" ? ["${local.spa_url}/"] : [],
     var.cognito_extra_callback_urls,
   ))
+
+  # Resolve the inference Route53 zone: explicit ID wins; else look it up by the
+  # core domain name (the hosted zone already exists in the account).
+  inference_zone_id = var.inference_route53_zone_id != "" ? var.inference_route53_zone_id : (
+    var.core_domain_name != "" ? one(data.aws_route53_zone.core[*].zone_id) : ""
+  )
+
+  # The inference edge is served on ONE host, not two: the public API host
+  # (api_domain_name) when set — the prod public posture the SPA calls — else the
+  # internal/VPN host (inference_domain_name). sync-gitops-values.sh selects the
+  # same way, so the ACM cert + external-dns filter must track this effective host
+  # (otherwise the prod ALB gets no matching cert and external-dns skips the record).
+  inference_effective_host = var.api_domain_name != "" ? var.api_domain_name : var.inference_domain_name
+}
+
+# Core public hosted zone, looked up by name so the inference/api ACM+DNS wiring
+# doesn't need a hardcoded zone ID. Only queried when a core domain is set and no
+# explicit inference zone ID was provided.
+data "aws_route53_zone" "core" {
+  count        = var.core_domain_name != "" && var.inference_route53_zone_id == "" ? 1 : 0
+  name         = var.core_domain_name
+  private_zone = false
 }
 
 # ---------------------------------------------------------------------------
@@ -150,7 +172,7 @@ module "iam" {
   enable_xray_tracing       = var.enable_xray_tracing
   enable_aws_lb_controller  = var.enable_aws_lb_controller
   enable_external_dns       = var.enable_external_dns
-  route53_zone_id           = var.inference_route53_zone_id
+  route53_zone_id           = local.inference_zone_id
 
   tags = local.common_tags
 }
@@ -198,11 +220,11 @@ module "frontend" {
   tags = local.common_tags
 }
 
-# Regional WAFv2 for the public inference ALB (attached via the Ingress
-# `wafv2-acl-arn` annotation by sync-gitops-values for prod).
+
 resource "aws_wafv2_web_acl" "inference_api" {
   count = var.enable_waf && var.api_domain_name != "" ? 1 : 0
 
+  # checkov:skip=CKV2_AWS_31:WAF request logging deferred; ALB access logs + CloudWatch WAF metrics provide sufficient visibility for now.
   name        = "${local.name}-api-waf"
   scope       = "REGIONAL"
   description = "${local.name} public inference ALB - managed common rules + rate limit"
@@ -344,15 +366,17 @@ module "cost" {
 }
 
 # ---------------------------------------------------------------------------
-# Inference HTTPS endpoint: a public ACM cert (DNS-validated against the
-# provided Route53 zone) consumed by the internal ALB Ingress. The A-record to
-# the ALB is created by external-dns (the ALB name isn't known at apply time).
-# Gated on inference_domain_name — nothing is created when it's empty.
+# Inference HTTPS endpoint: a public ACM cert (DNS-validated against the core
+# Route53 zone) for the effective inference host — the public api_domain_name in
+# prod, else the internal inference_domain_name. The ALB controller discovers
+# this cert BY HOST, so it must match whichever host the Ingress serves. The
+# A-record to the ALB is created by external-dns (the ALB name isn't known at
+# apply time). Nothing is created when both hosts are empty.
 # ---------------------------------------------------------------------------
 resource "aws_acm_certificate" "inference" {
-  count = var.inference_domain_name != "" ? 1 : 0
+  count = local.inference_effective_host != "" ? 1 : 0
 
-  domain_name       = var.inference_domain_name
+  domain_name       = local.inference_effective_host
   validation_method = "DNS"
   tags              = local.common_tags
 
@@ -362,7 +386,7 @@ resource "aws_acm_certificate" "inference" {
 }
 
 resource "aws_route53_record" "inference_cert_validation" {
-  for_each = var.inference_domain_name != "" ? {
+  for_each = local.inference_effective_host != "" ? {
     for dvo in aws_acm_certificate.inference[0].domain_validation_options : dvo.domain_name => {
       name   = dvo.resource_record_name
       type   = dvo.resource_record_type
@@ -370,7 +394,7 @@ resource "aws_route53_record" "inference_cert_validation" {
     }
   } : {}
 
-  zone_id         = var.inference_route53_zone_id
+  zone_id         = local.inference_zone_id
   name            = each.value.name
   type            = each.value.type
   records         = [each.value.record]
@@ -379,7 +403,7 @@ resource "aws_route53_record" "inference_cert_validation" {
 }
 
 resource "aws_acm_certificate_validation" "inference" {
-  count = var.inference_domain_name != "" ? 1 : 0
+  count = local.inference_effective_host != "" ? 1 : 0
 
   certificate_arn         = aws_acm_certificate.inference[0].arn
   validation_record_fqdns = [for r in aws_route53_record.inference_cert_validation : r.fqdn]

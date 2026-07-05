@@ -435,7 +435,13 @@ variable "inference_domain_name" {
 }
 
 variable "inference_route53_zone_id" {
-  description = "Route53 hosted zone ID for ACM DNS validation + the inference A-record. Required when inference_domain_name is set."
+  description = "Route53 hosted zone ID for ACM DNS validation + the inference A-record. Optional: when empty and core_domain_name is set, the zone is resolved by name."
+  type        = string
+  default     = ""
+}
+
+variable "core_domain_name" {
+  description = "Root/apex domain whose Route53 public hosted zone already exists (e.g. freeeasycrypto.com). When set, inference/api DNS resolves the zone by name so a literal zone ID isn't required."
   type        = string
   default     = ""
 }

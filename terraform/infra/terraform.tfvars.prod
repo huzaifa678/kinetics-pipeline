@@ -88,8 +88,12 @@ gitops_repo_revision    = "main"
 # --- Inference ingress (internal ALB over the Client VPN) ---
 enable_aws_lb_controller  = true
 enable_external_dns       = true
-inference_domain_name     = "" # REQUIRED: e.g. "inference.example.com"
-inference_route53_zone_id = "" # REQUIRED: hosted zone ID for the domain above
+core_domain_name          = "freeeasycrypto.com" # existing Route53 public hosted zone (resolved by name)
+# Prod is PUBLIC, so the live inference host is api_domain_name (below). The
+# internal/VPN-only alternative would instead set inference_domain_name here and
+# leave api_domain_name empty — they're mutually exclusive (see sync-gitops-values.sh).
+inference_domain_name     = ""
+inference_route53_zone_id = "" # left empty ⇒ zone resolved by name from core_domain_name
 
 # --- AWS-managed observability (full hybrid: AMP + AMG + X-Ray) ---
 # AMG requires IAM Identity Center (SSO)/SAML to log in. With it ON here, flip
@@ -105,8 +109,8 @@ enable_cognito           = true
 enable_frontend          = true
 enable_waf               = true
 frontend_domain_name     = "" # OPTIONAL: blank ⇒ SPA served on the *.cloudfront.net URL (no DNS)
-api_domain_name          = "" # for a custom HTTPS API host (needs a domain); blank keeps inference internal
-frontend_route53_zone_id = "" # only needed if frontend_domain_name/api_domain_name are set
+api_domain_name          = "api.freeeasycrypto.com" # public HTTPS inference API host
+frontend_route53_zone_id = "" # only needed if frontend_domain_name is set (api DNS uses external-dns + the inference zone)
 cognito_hosted_ui_prefix = "kinetics-prod-auth" # REQUIRED: globally-unique across ALL AWS accounts; change if taken
 # cognito_extra_callback_urls = ["http://localhost:5173/"]  # for local SPA dev
 
