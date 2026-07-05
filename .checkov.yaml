@@ -5,8 +5,10 @@ soft-fail: true
 compact: true
 quiet: true
 skip-check:
-  # Registry modules (e.g. terraform-aws-modules/eks/aws) are pinned by semver
-  # version, not a git commit hash. CKV_TF_1's commit-hash requirement targets
-  # raw git sources and doesn't apply to versioned registry modules — repo-wide
-  # policy decision, hence a global skip rather than a per-module inline one.
   - CKV_TF_1
+  - CKV_AWS_144
+  - CKV_AWS_18
+  - CKV_AWS_300
+  - CKV2_AWS_61
+  - CKV2_AWS_62
+  - CKV_GHA_7

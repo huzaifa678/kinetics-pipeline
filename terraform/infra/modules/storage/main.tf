@@ -57,6 +57,24 @@ resource "aws_s3_bucket" "checkpoints" {
   tags   = var.tags
 }
 
+# Checkpoints hold model state — version them (recover from a bad/overwritten
+# checkpoint) and encrypt at rest with KMS (CKV_AWS_21 / CKV_AWS_145).
+resource "aws_s3_bucket_versioning" "checkpoints" {
+  bucket = aws_s3_bucket.checkpoints.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "checkpoints" {
+  bucket = aws_s3_bucket.checkpoints.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "checkpoints" {
   bucket                  = aws_s3_bucket.checkpoints.id
   block_public_acls       = true
@@ -99,6 +117,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "checkpoints" {
 # Lifecycle-script bucket for HyperPod node bootstrap (on_create scripts).
 # ---------------------------------------------------------------------------
 resource "aws_s3_bucket" "lifecycle" {
+  # checkov:skip=CKV_AWS_145:Non-sensitive bootstrap scripts; SSE-S3 is adequate, no CMK needed.
+  # checkov:skip=CKV_AWS_21:Scripts are reproduced from git on apply; object versioning adds no recovery value.
   bucket = "${var.name}-lifecycle-${local.suffix}"
   tags   = var.tags
 }
@@ -130,9 +150,11 @@ resource "aws_vpc_security_group_egress_rule" "fsx_all" {
   security_group_id = aws_security_group.fsx.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
+  description       = "All egress (FSx for Lustre S3 import/export + LNET)"
 }
 
 resource "aws_fsx_lustre_file_system" "this" {
+  # checkov:skip=CKV_AWS_190:Ephemeral SCRATCH_2 scratch FS rehydrated from S3; data is non-durable/reproducible, default encryption suffices.
   storage_capacity            = var.fsx_storage_capacity_gb
   subnet_ids                  = [var.private_subnet_id]
   security_group_ids          = [aws_security_group.fsx.id]

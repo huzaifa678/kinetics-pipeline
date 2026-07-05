@@ -25,6 +25,11 @@ data "aws_ami" "al2023" {
 # credential is committed: aws secretsmanager put-secret-value --secret-id <arn>
 # --secret-string <pat>. Needs the repo's runner-admin scope.
 resource "aws_secretsmanager_secret" "runner_pat" {
+  # PAT is seeded out-of-band and rotated manually (GitHub PATs have no AWS-side
+  # rotation hook); default AWS-managed encryption is fine for a single-account
+  # bootstrap credential read only by the runner's instance role.
+  # checkov:skip=CKV_AWS_149:Single-account bootstrap secret; default AWS-managed KMS is adequate, a CMK adds key-policy overhead for no gain.
+  # checkov:skip=CKV2_AWS_57:GitHub PATs have no Secrets Manager rotation hook; rotated manually out-of-band.
   name        = "${var.name}-gha-runner-pat"
   description = "GitHub PAT (runner-admin) the self-hosted runner uses to fetch a registration token."
   tags        = var.tags
@@ -100,6 +105,8 @@ resource "aws_launch_template" "runner" {
 
   vpc_security_group_ids = [aws_security_group.runner.id]
 
+  # IMDSv2 only; hop_limit 2 so the runner agent container can reach IMDS.
+  # checkov:skip=CKV_AWS_341:hop_limit 2 lets the containerized runner agent reach IMDS; IMDSv2 is already enforced via http_tokens=required.
   metadata_options {
     http_tokens                 = "required" # IMDSv2 only
     http_put_response_hop_limit = 2

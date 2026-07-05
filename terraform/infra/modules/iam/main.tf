@@ -48,6 +48,7 @@ resource "aws_iam_role" "hyperpod_execution" {
 data "aws_iam_policy_document" "hyperpod_inline" {
   # checkov:skip=CKV_AWS_356:EC2 describe/ENI + CloudWatch Logs don't support resource-level scoping; ENIs are created dynamically at node provision time.
   # checkov:skip=CKV_AWS_111:The unconstrained actions are ops-plane (Logs/metrics/ENI lifecycle), not data writes; S3 data access is bucket-scoped above.
+  # checkov:skip=CKV_AWS_109:Same ops-plane actions (Logs/EC2 describe/ENI lifecycle) — no permissions-management or resource-exposure actions are granted.
   statement {
     sid    = "S3DataAccess"
     effect = "Allow"
@@ -309,6 +310,11 @@ resource "aws_iam_role" "karpenter_controller" {
 }
 
 data "aws_iam_policy_document" "karpenter_controller" {
+  # This is the upstream Karpenter controller policy: EC2 fleet/describe/pricing
+  # actions that don't support resource-level ARNs (describes) or are gated by
+  # `aws:RequestTag`/`ec2:ResourceTag` conditions instead of resource scoping.
+  # checkov:skip=CKV_AWS_356:Karpenter's EC2 describe/pricing/fleet actions can't be resource-scoped; scoping is enforced via tag conditions, not resource ARNs.
+  # checkov:skip=CKV_AWS_109:No IAM permissions-management actions here; the wildcard statements are read/describe + tag-conditioned instance lifecycle.
   statement {
     sid     = "AllowScopedEC2InstanceAccessActions"
     effect  = "Allow"

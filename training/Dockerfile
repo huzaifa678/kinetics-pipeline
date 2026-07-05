@@ -1,3 +1,4 @@
+# checkov:skip=CKV_DOCKER_2:Batch training job (runs to completion, not a long-lived service) — a container HEALTHCHECK is not applicable.
 FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime AS builder
 
 ENV PIP_NO_CACHE_DIR=1 \
