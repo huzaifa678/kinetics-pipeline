@@ -10,6 +10,10 @@ resource "aws_launch_template" "system" {
     cidr             = module.eks.cluster_service_cidr
   }))
 
+  # Enforce IMDSv2 (CKV_AWS_79). hop_limit 2 so the VPC-CNI pod (aws-node) can
+  # still reach IMDS; workloads use Pod Identity/IRSA, not node creds. This
+  # deliberately trades off CKV_AWS_341 (which wants hop_limit 1) — 1 breaks CNI.
+  # checkov:skip=CKV_AWS_341:hop_limit must be 2 for the EKS VPC-CNI pod to reach IMDS; kept in favour of the CKV_AWS_79 IMDSv2 hardening.
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"

@@ -1,3 +1,4 @@
+# checkov:skip=CKV_DOCKER_2:Runs under Seldon/MLServer on Kubernetes — liveness/readiness are handled by k8s probes, not a Docker HEALTHCHECK.
 FROM seldonio/mlserver:1.6.1-slim AS runtime
 
 ENV PIP_NO_CACHE_DIR=1 \

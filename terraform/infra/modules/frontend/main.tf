@@ -6,6 +6,11 @@ locals {
 }
 
 resource "aws_s3_bucket" "spa" {
+  # Public SPA build artifacts (compiled JS/CSS/HTML) — reproducible from CI, not
+  # sensitive. SSE-S3 default encryption is fine (no CMK) and versioning is
+  # unnecessary since every deploy is a fresh immutable build from the pipeline.
+  # checkov:skip=CKV_AWS_145:Non-sensitive public static assets; SSE-S3 is adequate, a CMK adds no confidentiality.
+  # checkov:skip=CKV_AWS_21:SPA assets are reproducible CI build output; object versioning adds cost for no recovery value.
   bucket = local.bucket_name
   tags   = var.tags
 }
@@ -85,6 +90,8 @@ resource "aws_cloudfront_distribution" "spa" {
   # checkov:skip=CKV_AWS_310:Single S3 origin; origin failover is not applicable.
   # checkov:skip=CKV_AWS_86:Access logging omitted by choice; WAF + CloudFront metrics suffice for a static SPA.
   # checkov:skip=CKV_AWS_174:TLSv1.2_2021 is enforced with a custom ACM cert; the default CloudFront cert (no-domain path) cannot set a min-protocol version.
+  # checkov:skip=CKV2_AWS_47:Log4j (AMR) protection is not relevant to a static SPA with no Java/JNDI backend; the attached WAF already runs managed common rules.
+  # checkov:skip=CKV2_AWS_32:Response-headers policy deferred; the SPA sets its security headers at the app/S3 layer.
   enabled             = true
   default_root_object = "index.html"
   aliases             = local.has_domain ? [var.domain_name] : []
@@ -162,6 +169,9 @@ resource "aws_route53_record" "spa" {
 resource "aws_wafv2_web_acl" "spa" {
   count = var.enable_waf ? 1 : 0
 
+  # WAF request logging deferred until a log sink is provisioned; CloudWatch WAF
+  # metrics cover blocked/allowed counts for this public SPA edge.
+  # checkov:skip=CKV2_AWS_31:WAF request logging deferred; CloudWatch WAF metrics provide sufficient visibility.
   name        = "${var.name}-frontend-waf"
   scope       = "CLOUDFRONT"
   description = "${var.name} SPA - managed common rules + rate limit"

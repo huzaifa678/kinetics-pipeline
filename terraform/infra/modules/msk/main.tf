@@ -23,9 +23,11 @@ resource "aws_vpc_security_group_egress_rule" "msk_all" {
   security_group_id = aws_security_group.msk.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
+  description       = "All egress (broker-to-broker + AWS API)"
 }
 
 resource "aws_msk_cluster" "this" {
+  # checkov:skip=CKV_AWS_80:Broker logging omitted by choice for an internal Seldon event bus; no compliance requirement here.
   cluster_name           = var.name
   kafka_version          = var.kafka_version
   number_of_broker_nodes = local.broker_count
@@ -69,6 +71,10 @@ resource "aws_msk_cluster" "this" {
 resource "aws_kms_key" "scram" {
   count = local.scram ? 1 : 0
 
+  # Default key policy (root-account access) is sufficient; access is granted
+  # via IAM (the scoped GetSecretValue/Decrypt on the CI plan role). Key
+  # rotation is on. A custom key policy would add no meaningful restriction here.
+  # checkov:skip=CKV2_AWS_64:Default key policy is intentional; access is controlled through scoped IAM, and key rotation is enabled.
   description         = "${var.name} MSK SASL/SCRAM secret encryption"
   enable_key_rotation = true
   tags                = var.tags
@@ -91,6 +97,7 @@ resource "random_password" "scram" {
 resource "aws_secretsmanager_secret" "scram" {
   count = local.scram ? 1 : 0
 
+  # checkov:skip=CKV2_AWS_57:No native MSK SCRAM rotation hook; the credential is rotated by Terraform re-apply, not Secrets Manager auto-rotation.
   name       = "AmazonMSK_${var.name}_scram"
   kms_key_id = aws_kms_key.scram[0].key_id
   tags       = var.tags
