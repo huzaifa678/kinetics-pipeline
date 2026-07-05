@@ -82,7 +82,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
 
       - name: Trivy image scan (${{ matrix.name }})
-        uses: aquasecurity/trivy-action@@0.36.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           image-ref: ${{ vars.ECR_REPOSITORY }}:${{ matrix.tag }}
           format: sarif
