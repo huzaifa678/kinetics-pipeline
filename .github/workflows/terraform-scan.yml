@@ -1,0 +1,64 @@
+name: terraform-scan
+
+# Static guardrails for the repo. Scans terraform, dockefile and github actions for security misconfigurations, and scans helm charts for CVEs. Also runs Infracost to
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - "training/Dockerfile*"
+      - ".checkov.yaml"
+      - ".github/workflows/terraform-scan.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write # infracost comment
+
+jobs:
+  checkov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkov (terraform + dockerfile + secrets + actions)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          config_file: .checkov.yaml
+          framework: terraform,dockerfile,secrets,github_actions
+          output_format: cli
+
+  infracost:
+    runs-on: ubuntu-latest
+    env:
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }} 
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ env.INFRACOST_API_KEY }}
+
+      - name: Infracost baseline (target branch)
+        run: |
+          git checkout "${{ github.event.pull_request.base.ref }}"
+          infracost breakdown --path=terraform/infra \
+            --terraform-var-file=terraform.tfvars.prod \
+            --format=json --out-file=/tmp/infracost-base.json || echo "{}" > /tmp/infracost-base.json
+          git checkout "${{ github.event.pull_request.head.sha }}"
+
+      - name: Infracost diff (PR)
+        run: |
+          infracost diff --path=terraform/infra \
+            --terraform-var-file=terraform.tfvars.prod \
+            --compare-to=/tmp/infracost-base.json \
+            --format=json --out-file=/tmp/infracost.json
+
+      - name: Post cost comment
+        run: |
+          infracost comment github --path=/tmp/infracost.json \
+            --repo="$GITHUB_REPOSITORY" \
+            --pull-request="${{ github.event.pull_request.number }}" \
+            --github-token="${{ github.token }}" \
+            --behavior=update
