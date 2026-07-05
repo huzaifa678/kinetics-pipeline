@@ -160,16 +160,27 @@ resource "aws_iam_role_policy" "tf_plan_state" {
   policy = data.aws_iam_policy_document.tf_state.json
 }
 
-# AWS ReadOnlyAccess deliberately omits sensitive reads that `terraform plan`
-# needs while refreshing state — e.g. the MSK SCRAM secret (GetSecretValue) and
-# its customer-managed KMS key (Decrypt). Read-only; the plan role still can't
-# write anything.
+
 data "aws_iam_policy_document" "tf_plan_reads" {
+  # checkov:skip=CKV_AWS_356:kms:Decrypt key ARN is provisioned by the later MSK stack and unknowable at bootstrap; constrained to this account and to Secrets-Manager-mediated decrypts via the kms:ViaService condition below.
+  # checkov:skip=CKV_AWS_108:No cross-account exfiltration path — Decrypt is scoped to this account's KMS keys and GetSecretValue to the single MSK SCRAM secret name pattern.
+  # checkov:skip=CKV_AWS_111:Read-only actions (GetSecretValue/Decrypt); the plan role attaches AWS ReadOnlyAccess and can write nothing.
   statement {
-    sid       = "SensitiveReadsForRefresh"
+    sid       = "SecretsManagerReadForRefresh"
     effect    = "Allow"
-    actions   = ["secretsmanager:GetSecretValue", "kms:Decrypt"]
-    resources = ["*"]
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = ["arn:${data.aws_partition.current.partition}:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:AmazonMSK_${var.name}_scram*"]
+  }
+  statement {
+    sid       = "KmsDecryptViaSecretsManager"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = ["arn:${data.aws_partition.current.partition}:kms:*:${data.aws_caller_identity.current.account_id}:key/*"]
+    condition {
+      test     = "StringLike"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.*.amazonaws.com"]
+    }
   }
 }
 
@@ -229,3 +240,4 @@ resource "aws_iam_role_policy" "frontend_deploy" {
 }
 
 data "aws_partition" "current" {}
+data "aws_caller_identity" "current" {}

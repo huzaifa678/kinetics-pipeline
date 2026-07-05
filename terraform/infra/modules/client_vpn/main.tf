@@ -95,6 +95,7 @@ resource "aws_iam_saml_provider" "self_service" {
 
 
 resource "aws_security_group" "this" {
+  # checkov:skip=CKV_AWS_382:Client-VPN ENIs require all-protocol egress to route user traffic into the VPC / out via NAT.
   name_prefix = "${var.name}-client-vpn-"
   description = "Client VPN endpoint ENIs"
   vpc_id      = var.vpc_id
