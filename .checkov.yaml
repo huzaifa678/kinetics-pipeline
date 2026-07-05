@@ -1,0 +1,7 @@
+directory:
+  - .
+download-external-modules: false
+soft-fail: true
+compact: true
+quiet: true
+skip-check:

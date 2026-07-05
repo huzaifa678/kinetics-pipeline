@@ -11,6 +11,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  security-events: write 
 
 # Serialize whole runs: the bump-* jobs push to the same GitOps repo, so two
 # overlapping runs (e.g. quick successive merges) must not race. Queue, never
@@ -80,8 +81,22 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.scope }}
 
-  # NOTE: image-tag write-back to the GitOps repo is owned by ArgoCD Image
-  # Updater now (annotations on the kinetics-training/inference/experiment
-  # Applications), not by chained update-gitops jobs. This workflow only builds +
-  # pushes the sha-/serve-/seldon- tags; Image Updater picks up the newest build
-  # and commits image.tag. update-gitops.yml stays as a manual fallback.
+      - name: Trivy image scan (${{ matrix.name }})
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ vars.ECR_REPOSITORY }}:${{ matrix.tag }}
+          format: sarif
+          output: trivy-${{ matrix.scope }}.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+          TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
+
+      - name: Upload Trivy SARIF (${{ matrix.name }})
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.scope }}.sarif
+          category: trivy-${{ matrix.scope }}
