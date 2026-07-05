@@ -46,6 +46,8 @@ resource "aws_iam_role" "hyperpod_execution" {
 }
 
 data "aws_iam_policy_document" "hyperpod_inline" {
+  # checkov:skip=CKV_AWS_356:EC2 describe/ENI + CloudWatch Logs don't support resource-level scoping; ENIs are created dynamically at node provision time.
+  # checkov:skip=CKV_AWS_111:The unconstrained actions are ops-plane (Logs/metrics/ENI lifecycle), not data writes; S3 data access is bucket-scoped above.
   statement {
     sid    = "S3DataAccess"
     effect = "Allow"

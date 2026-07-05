@@ -192,14 +192,12 @@ resource "aws_lambda_layer_version" "boto3" {
 }
 
 resource "aws_lambda_function" "auto_stop" {
-  # Internal cron scaler: no inbound, calls only AWS public APIs (SageMaker/SNS),
-  # env vars are non-sensitive (cluster name, group, idle minutes, SNS ARN).
-  # VPC/CMK/code-signing/DLQ/X-Ray add cost + complexity for no real gain here.
   # checkov:skip=CKV_AWS_117:No VPC — the function only calls AWS public APIs; VPC placement would force a NAT path for no benefit.
   # checkov:skip=CKV_AWS_272:Code-signing is overkill for an internal, self-built ops Lambda deployed via Terraform.
   # checkov:skip=CKV_AWS_173:Env vars carry no secrets (cluster name / group / idle minutes / SNS ARN); default AWS-managed at-rest encryption suffices.
   # checkov:skip=CKV_AWS_50:X-Ray tracing adds no value for a simple scheduled scaler.
   # checkov:skip=CKV_AWS_116:No DLQ — the trigger is an idempotent CloudWatch cron; a failed run simply retries next tick.
+  # checkov:skip=CKV_AWS_115:No reserved concurrency — a singleton cron scaler never fans out; a per-function limit adds nothing.
   count            = var.auto_stop_idle_minutes > 0 ? 1 : 0
   function_name    = "${var.name}-auto-stop"
   role             = aws_iam_role.auto_stop[0].arn

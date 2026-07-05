@@ -1,4 +1,5 @@
 resource "aws_ecr_repository" "training" {
+  # checkov:skip=CKV_AWS_136:Images are non-secret build artifacts; AES256 at-rest is adequate, KMS adds puller key-policy overhead for no gain.
   name = var.repository_name
 
   image_tag_mutability = var.image_tag_mutability

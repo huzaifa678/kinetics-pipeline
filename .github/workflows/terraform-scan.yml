@@ -28,9 +28,10 @@ jobs:
           output_format: cli
 
   infracost:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
-      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }} 
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:

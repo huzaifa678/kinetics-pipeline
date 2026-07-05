@@ -81,6 +81,10 @@ resource "aws_cloudfront_origin_access_control" "spa" {
 }
 
 resource "aws_cloudfront_distribution" "spa" {
+  # checkov:skip=CKV_AWS_374:Public SPA — geo restriction intentionally "none".
+  # checkov:skip=CKV_AWS_310:Single S3 origin; origin failover is not applicable.
+  # checkov:skip=CKV_AWS_86:Access logging omitted by choice; WAF + CloudFront metrics suffice for a static SPA.
+  # checkov:skip=CKV_AWS_174:TLSv1.2_2021 is enforced with a custom ACM cert; the default CloudFront cert (no-domain path) cannot set a min-protocol version.
   enabled             = true
   default_root_object = "index.html"
   aliases             = local.has_domain ? [var.domain_name] : []
