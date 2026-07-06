@@ -84,15 +84,19 @@ terraform -chdir=terraform/network init && \
 
 # 2. Self-hosted CI runner (its own layer; reads the VPC from the NETWORK layer —
 #    NOT infra). No VPN. Seeds the PAT. Now the runner is up before infra/cluster.
+#    ← These 3 are the ONLY laptop applies; everything below runs in CI.
 RUNNER_PAT=… ENVIRONMENT=prod ./scripts/bootstrap-runner.sh
 
-# 3. Cluster-access bootstrap — ONE command, run by a cluster admin ON THE VPN.
-#    Re-checks network → applies infra (enable_hyperpod=false, a clean apply) →
-#    pauses for you to connect the Client VPN → applies the cluster layer
-#    (ci-deployer RBAC + ArgoCD). No -target, no expected failures.
-RUNNER_PAT=… ENVIRONMENT=prod ./scripts/bootstrap-cluster-access.sh   # from repo root
+# 3. infra → CI (terraform-apply, GitHub-hosted). First run enable_hyperpod=false.
+#    Creates the access entries (incl. the gated cluster-admin entry) + Client VPN.
+#
+# 4. Cluster bootstrap → CI, NO laptop/VPN: dispatch the `cluster-bootstrap` workflow
+#    and approve the `production` Environment. It assumes the gated cluster-admin role
+#    on the in-VPC runner and creates the ci-deployer RBAC + ArgoCD once. Thereafter
+#    the least-privilege terraform-apply `cluster_apply` job reconciles it.
+#    (Laptop/VPN fallback if you skip the gated role: bootstrap-cluster-access.sh.)
 
-# 4. Once ArgoCD shows `hyperpod-dependencies` Synced+Healthy, bring HyperPod up
+# 5. Once ArgoCD shows `hyperpod-dependencies` Synced+Healthy, bring HyperPod up
 #    (default enable_hyperpod=true) — the SageMaker cluster now creates cleanly.
 terraform -chdir=terraform/infra apply -var-file=terraform.tfvars.prod
 
@@ -159,14 +163,21 @@ kept as a reference mirror of the same manifests.
 
 The cluster uses `authentication_mode = "API"` (no aws-auth ConfigMap) and the
 implicit cluster-creator admin grant is **disabled**. Admin is granted
-explicitly via access entries (`AmazonEKSClusterAdminPolicy`) to the principals
-in `cluster_admin_principal_arns`.
+explicitly via access entries (`AmazonEKSClusterAdminPolicy`). There are three
+tiers (`modules/eks`), keeping steady-state CI least-privilege:
+
+- `cluster_admin_principal_arns` — break-glass humans (e.g. your SSO/`user/terraform`).
+- `cluster_deployer_principal_arns` — the `…-gha-tf-apply` role → the non-admin
+  `kinetics:ci-deployers` group (the `ci-deployer` ClusterRole). Steady-state CI.
+- `cluster_bootstrap_principal_arns` — the gated `…-gha-cluster-bootstrap` role,
+  and ONLY it, gets cluster-admin. It exists solely for the one-time RBAC/ArgoCD
+  bootstrap via `cluster-bootstrap.yml` (assumable only from the protected
+  `production` Environment), so the runner's day-to-day identity is never admin.
 
 > ⚠️ Include the IAM role/user that **runs Terraform** in
 > `cluster_admin_principal_arns`. With creator-admin off, the Helm/Kubernetes
 > providers (ArgoCD bootstrap, app-of-apps) authenticate but get RBAC-denied
-> unless that principal has an admin access entry. Add your CI/SSO admin role
-> ARN there too.
+> unless that principal has an admin access entry.
 
 ### Private cluster access: AWS Client VPN (SAML)
 
@@ -189,11 +200,12 @@ custom SAML app for AWS Client VPN (ACS URL `http://127.0.0.1:35001`, audience
 `urn:amazon:webservices:clientvpn`), download its metadata XML into `terraform/infra/`,
 then set `enable_client_vpn = true` and `vpn_saml_metadata_file = "<that file>"`.
 
-> ⚠️ Layer ordering: the `infra` apply (AWS-API only) creates the VPC/NAT/EKS/VPN
-> without touching the K8s API, so it needs no VPN. The **`cluster`** layer (ArgoCD +
-> RBAC) does hit the private endpoint, so run its **first** apply **from on the VPN**
-> as a cluster admin (`scripts/bootstrap-cluster-access.sh` orchestrates both), or add
-> the apply host's egress IP to `cluster_endpoint_public_access_cidrs`.
+> ⚠️ Layer ordering: the `network` + `infra` applies (AWS-API only) create the
+> VPC/NAT/EKS/VPN without touching the K8s API, so they need no VPN. The **`cluster`**
+> layer (ArgoCD + RBAC) does hit the private endpoint. Its first apply runs from the
+> **in-VPC self-hosted runner** via the gated `cluster-bootstrap.yml` workflow (no
+> human VPN). The VPN is only needed for the laptop fallback
+> (`scripts/bootstrap-cluster-access.sh`) or ad-hoc `kubectl`.
 
 ### Auth: EKS Pod Identity (not IRSA)
 
@@ -402,6 +414,7 @@ Workflows in `.github/workflows/`:
 | `terraform-validate` / `-lint` | PR/push to `terraform/**` | hosted | fmt+validate (matrix: network/infra/cluster/runner), tflint |
 | `terraform-plan` | PR | infra→**hosted**, cluster→**self-hosted** | OIDC→plan role; comments the plan per layer |
 | `terraform-apply` | push to `main` / dispatch | infra→**hosted**, `cluster_apply`→**self-hosted** | infra (saved plan) → then cluster (needs infra); `production` env approval |
+| `cluster-bootstrap` | **dispatch only** | **self-hosted** | ONE-TIME: assumes the gated cluster-admin role (protected `production` env) → creates ci-deployer RBAC + ArgoCD. Replaces the manual VPN step |
 | `docker-build` | push to `training/**` | hosted | buildx amd64 → ECR (`sha-`/`serve-`/`seldon-`); ArgoCD Image Updater bumps tags |
 
 **Why two runner types:** the `infra` layer is AWS-API only, so it runs on
@@ -409,11 +422,17 @@ GitHub-hosted `ubuntu-latest`; only the `cluster` layer touches the VPN-locked K
 API, so it runs on the **self-hosted VPC runner** (the `terraform/runner` layer).
 This dissolves the chicken-egg — nothing that *creates* the runner depends on it.
 
-The `cluster` layer's **first** apply must be run by a cluster admin on the VPN
-(the `ci-deployer` RBAC needs an admin — k8s escalation-prevention); after that CI
-reconciles it. Run `scripts/setup-github-ci.sh` after the bootstrap stack to populate
-repo variables from `terraform output`. The `kinetics-training` ArgoCD app is
-**manual-sync**, so a tag bump never launches a GPU run.
+The `cluster` layer's **first** apply needs a cluster admin (the escalation-capable
+`ci-deployer` RBAC — k8s escalation-prevention); after that the least-privilege CI
+runner reconciles it. That one-time admin is the **`cluster-bootstrap` workflow**
+(manual dispatch, gated on the protected `production` Environment) assuming the
+dedicated `…-gha-cluster-bootstrap` role on the in-VPC runner — **no VPN, no laptop**,
+and the runner's steady-state identity never holds cluster-admin. (Leave
+`cluster_bootstrap_principal_arns` empty to skip that role and use the
+`scripts/bootstrap-cluster-access.sh` VPN fallback instead.) Run
+`scripts/setup-github-ci.sh` after the bootstrap stack to populate repo variables
+from `terraform output`. The `kinetics-training` ArgoCD app is **manual-sync**, so a
+tag bump never launches a GPU run.
 
 ## Teardown (cost-aware destroy)
 
