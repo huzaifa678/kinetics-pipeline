@@ -28,8 +28,6 @@ env:
 
 jobs:
   plan:
-    # infra is AWS-API only → hosted; only the cluster layer refreshes K8s state,
-    # so it needs the self-hosted VPC runner.
     runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
@@ -91,16 +89,12 @@ jobs:
           terraform plan ${{ steps.profile.outputs.var_files }} -no-color -input=false -lock-timeout=120s -out=tfplan | tee plan.txt
           echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      # Policy-as-code: OPA/Conftest against the resolved plan JSON. `deny` rules
-      # fail the job (hard gate); `warn` rules just print. Policies in policy/.
       - name: Policy (OPA / Conftest)
         if: steps.plan.outputs.exitcode == '0'
-        run: |
-          CONFTEST_VERSION=0.56.0
-          curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
-            | tar -xz -C /tmp conftest
-          terraform show -json tfplan > tfplan.json
-          /tmp/conftest test tfplan.json --policy "$GITHUB_WORKSPACE/policy" --all-namespaces
+        uses: ./.github/actions/opa-policy
+        with:
+          working-directory: terraform/${{ matrix.layer }}
+          plan-file: tfplan
 
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'

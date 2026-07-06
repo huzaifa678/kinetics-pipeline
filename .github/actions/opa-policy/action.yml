@@ -1,0 +1,67 @@
+name: "OPA policy gate"
+description: >
+  Convert a saved Terraform plan to JSON and evaluate it against the OPA/Conftest
+  policies in policy/. `deny` rules fail the step (hard gate); `warn` rules print.
+  Reused by terraform-plan and terraform-apply so the exact plan that applies is
+  the plan that is gated. Assumes `terraform` is already on PATH (setup-terraform).
+
+inputs:
+  working-directory:
+    description: "Layer dir containing the saved plan (e.g. terraform/infra)."
+    required: true
+  plan-file:
+    description: "Saved binary plan filename inside working-directory."
+    required: false
+    default: "tfplan"
+  policy-dir:
+    description: "Directory of .rego policies."
+    required: false
+    default: "policy"
+  conftest-version:
+    description: "Pinned Conftest release."
+    required: false
+    default: "0.56.0"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Conftest (pinned + checksum-verified)
+      shell: bash
+      env:
+        CONFTEST_VERSION: ${{ inputs.conftest-version }}
+      run: |
+        set -euo pipefail
+        # Skip if a matching version is already on PATH (self-hosted runner reuse).
+        if command -v conftest >/dev/null 2>&1 && \
+           conftest --version 2>/dev/null | grep -q "Conftest: ${CONFTEST_VERSION}"; then
+          echo "conftest ${CONFTEST_VERSION} already present"; exit 0
+        fi
+        case "$(uname -s)" in Linux) os=Linux;; Darwin) os=Darwin;; *) echo "unsupported OS"; exit 1;; esac
+        case "$(uname -m)" in x86_64|amd64) arch=x86_64;; arm64|aarch64) arch=arm64;; *) echo "unsupported arch"; exit 1;; esac
+        base="https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}"
+        tarball="conftest_${CONFTEST_VERSION}_${os}_${arch}.tar.gz"
+        tmp="$(mktemp -d)"
+        curl -fsSL "${base}/${tarball}"      -o "${tmp}/${tarball}"
+        curl -fsSL "${base}/checksums.txt"   -o "${tmp}/checksums.txt"
+        # Verify against the official checksums manifest before extracting.
+        ( cd "${tmp}" && grep " ${tarball}\$" checksums.txt | sha256sum -c - )
+        tar -xzf "${tmp}/${tarball}" -C "${tmp}" conftest
+        sudo install -m 0755 "${tmp}/conftest" /usr/local/bin/conftest 2>/dev/null \
+          || install -m 0755 "${tmp}/conftest" "${HOME}/.local/bin/conftest"
+        command -v conftest >/dev/null || echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Evaluate plan against policy
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PLAN_FILE: ${{ inputs.plan-file }}
+        POLICY_DIR: ${{ inputs.policy-dir }}
+      run: |
+        set -euo pipefail
+        terraform show -json "${PLAN_FILE}" > tfplan.json
+        # --namespace main: the policy/ dir also holds `docker` (and other)
+        # packages whose rules don't apply to a tfplan; scope to the terraform
+        # package so they aren't evaluated against the wrong input shape.
+        conftest test tfplan.json \
+          --policy "${GITHUB_WORKSPACE}/${POLICY_DIR}" \
+          --namespace main
