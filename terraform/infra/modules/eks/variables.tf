@@ -64,6 +64,19 @@ variable "cluster_viewer_principal_arns" {
   default     = []
 }
 
+variable "cluster_bootstrap_principal_arns" {
+  description = <<-EOT
+    IAM principal ARNs granted a cluster-admin access entry
+    (AmazonEKSClusterAdminPolicy) for the ONE-TIME ci-deployer RBAC + ArgoCD
+    bootstrap. Intended to hold only the gated cluster-bootstrap OIDC role
+    (assumable solely from the protected GitHub Environment). Kept separate from
+    cluster_deployer_principal_arns so the steady-state CI identity never becomes
+    cluster-admin. Empty = no such entry.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "deployer_group" {
   description = "Kubernetes group the deployer access entries map to; the ci-deployer ClusterRoleBinding must bind this exact group."
   type        = string

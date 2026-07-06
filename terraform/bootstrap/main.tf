@@ -12,14 +12,14 @@ locals {
 }
 
 module "ecr" {
-  source = "../modules/ecr"
+  source = "../infra/modules/ecr"
 
   repository_name = var.ecr_repository_name
   tags            = local.common_tags
 }
 
 module "cicd" {
-  source = "../modules/cicd"
+  source = "../infra/modules/cicd"
 
   name = local.name
 

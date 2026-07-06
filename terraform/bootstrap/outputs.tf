@@ -18,6 +18,10 @@ output "gha_terraform_apply_role_arn" {
   value = module.cicd.terraform_apply_role_arn
 }
 
+output "gha_cluster_bootstrap_role_arn" {
+  value = module.cicd.cluster_bootstrap_role_arn
+}
+
 output "github_oidc_provider_arn" {
   value = module.cicd.oidc_provider_arn
 }

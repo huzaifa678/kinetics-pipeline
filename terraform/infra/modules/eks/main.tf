@@ -51,6 +51,24 @@ module "eks" {
         }
       }
     },
+    # Gated one-time cluster-admin: the ONLY non-human admin. Held by the
+    # cluster-bootstrap OIDC role (assumable solely from the protected GitHub
+    # Environment), which creates the escalation-capable ci-deployer RBAC + ArgoCD
+    # once, then the least-privilege deployer group reconciles forever. Empty in
+    # any env that doesn't set cluster_bootstrap_principal_arns.
+    {
+      for idx, arn in var.cluster_bootstrap_principal_arns : "cluster-bootstrap-${idx}" => {
+        principal_arn = arn
+        policy_associations = {
+          cluster_admin = {
+            policy_arn = "arn:${data.aws_partition.current.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+            access_scope = {
+              type = "cluster"
+            }
+          }
+        }
+      }
+    },
   )
 
   # Let on-VPN clients reach the cluster API SG (private endpoint) on 443.
