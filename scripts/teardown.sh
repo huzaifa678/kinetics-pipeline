@@ -5,10 +5,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="$ROOT/terraform/infra"
 CLUSTER_DIR="$ROOT/terraform/cluster"
+RUNNER_DIR="$ROOT/terraform/runner"
+NETWORK_DIR="$ROOT/terraform/network"
 VAR_FILE="${VAR_FILE:-terraform.tfvars.dev}"
 ECR_REPO_NAME="${ECR_REPO_NAME:-kinetics-training}"
 tf() { terraform -chdir="$TF_DIR" "$@"; }
 tfc() { terraform -chdir="$CLUSTER_DIR" "$@"; }
+tfr() { terraform -chdir="$RUNNER_DIR" "$@"; }
+tfn() { terraform -chdir="$NETWORK_DIR" "$@"; }
 
 command -v terraform >/dev/null || { echo "terraform required"; exit 1; }
 command -v aws       >/dev/null || { echo "aws CLI required"; exit 1; }
@@ -22,10 +26,7 @@ if [ "${AUTO_APPROVE:-0}" != "1" ]; then
   [ "$ans" = "destroy" ] || { echo "aborted"; exit 1; }
 fi
 
-echo "==> [0/4] Destroy the CLUSTER layer first (in-cluster: argocd, RBAC, addons)"
-# Must go before the infra destroy: the cluster layer's providers read the live
-# EKS endpoint from infra's remote state, so tear it down while the cluster is
-# still up (on the VPN). Uses the cluster tfvars if present, else module defaults.
+echo "==> [0/6] Destroy the CLUSTER layer first (in-cluster: argocd, RBAC, addons)"
 if [ -d "$CLUSTER_DIR" ]; then
   cvar=""
   [ -f "$CLUSTER_DIR/$VAR_FILE" ] && cvar="-var-file=$VAR_FILE"
@@ -35,7 +36,7 @@ if [ -d "$CLUSTER_DIR" ]; then
   }
 fi
 
-echo "==> [1/4] Karpenter node check"
+echo "==> [1/6] Karpenter node check"
 if command -v kubectl >/dev/null && kubectl get nodes >/dev/null 2>&1; then
   if kubectl get nodeclaims >/dev/null 2>&1; then
     n="$(kubectl get nodeclaims --no-headers 2>/dev/null | wc -l | tr -d ' ')"
@@ -51,7 +52,7 @@ else
   echo "    GPU/CPU nodes running (EC2 console); destroy will not remove them."
 fi
 
-echo "==> [2/4] Emptying S3 buckets"
+echo "==> [2/6] Emptying S3 buckets"
 buckets="$(tf state pull | python3 -c '
 import sys, json
 s = json.load(sys.stdin)
@@ -82,7 +83,7 @@ for it in items:
 ' "$b"
 done
 
-echo "==> [3/4] ECR repo"
+echo "==> [3/6] ECR repo"
 if [ "${DELETE_ECR:-0}" = "1" ]; then
   echo "    DELETE_ECR=1 — deleting repo '$ECR_REPO_NAME' and its images"
   aws ecr delete-repository --repository-name "$ECR_REPO_NAME" --force >/dev/null 2>&1 || true
@@ -92,8 +93,27 @@ if tf state list 2>/dev/null | grep -q '^module\.ecr\.aws_ecr_repository\.traini
   tf state rm module.ecr.aws_ecr_repository.training >/dev/null
 fi
 
-echo "==> [4/4] terraform destroy"
+echo "==> [4/6] terraform destroy (INFRA layer: eks, iam, hyperpod, msk, ...)"
 tf destroy -var-file="$VAR_FILE" -auto-approve
+
+echo "==> [5/6] Destroy the RUNNER layer (its ASG/ENIs sit in the network subnets,"
+echo "          so it must go before the network destroy)"
+if [ -d "$RUNNER_DIR" ]; then
+  rvar=""
+  [ -f "$RUNNER_DIR/$VAR_FILE" ] && rvar="-var-file=$VAR_FILE"
+  tfr init -input=false >/dev/null 2>&1 || true
+  tfr destroy $rvar -auto-approve || {
+    echo "    runner destroy failed (layer empty/never applied?). Continuing."
+  }
+fi
+
+echo "==> [6/6] Destroy the NETWORK layer (vpc/nat/subnets) LAST"
+# The VPC lives in its own layer now (terraform/network); infra + runner both
+# read it via remote_state, so it's destroyed after both are gone.
+nvar=""
+[ -f "$NETWORK_DIR/$VAR_FILE" ] && nvar="-var-file=$VAR_FILE"
+tfn init -input=false >/dev/null 2>&1 || true
+tfn destroy $nvar -auto-approve
 
 echo "==> Done."
 [ "${DELETE_ECR:-0}" = "1" ] || echo "    Note: ECR repo '$ECR_REPO_NAME' was left intact in AWS (run with DELETE_ECR=1 to remove)."

@@ -4,26 +4,30 @@ ENVIRONMENT="${ENVIRONMENT:-prod}"
 PROJECT="${PROJECT:-kinetics-pipeline}"
 REGION="${REGION:-us-east-1}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+NETWORK="$ROOT/terraform/network"
 TF="$ROOT/terraform/runner"
 NAME="${PROJECT}-${ENVIRONMENT}"
 SECRET_ID="${NAME}-gha-runner-pat"
 ASG="${NAME}-gha-runner"
+VARFILE="terraform.tfvars.${ENVIRONMENT}"
 
 : "${RUNNER_PAT:?set RUNNER_PAT to a GitHub token with repo Administration read/write}"
 
-# The runner is its own state layer (terraform/runner), reading the VPC from the
-# infra layer's remote state — so this is a clean, un-targeted apply (no -target).
-# The infra layer's VPC must already exist (its remote-state outputs are read here).
-echo "==> 1/3 apply the runner layer (name from infra remote_state)"
+echo "==> 1/4 ensure the NETWORK layer (vpc) exists — the runner reads it"
+nvar=""; [ -f "$NETWORK/$VARFILE" ] && nvar="-var-file=$VARFILE"
+terraform -chdir="$NETWORK" init -input=false >/dev/null
+terraform -chdir="$NETWORK" apply -auto-approve -input=false $nvar
+
+echo "==> 2/4 apply the runner layer (name/vpc from the network remote_state)"
 terraform -chdir="$TF" init -input=false >/dev/null
 terraform -chdir="$TF" apply -auto-approve -input=false
 
-echo "==> 2/3 store the PAT in Secrets Manager ($SECRET_ID)"
+echo "==> 3/4 store the PAT in Secrets Manager ($SECRET_ID)"
 aws secretsmanager put-secret-value --region "$REGION" \
   --secret-id "$SECRET_ID" --secret-string "$RUNNER_PAT" >/dev/null
 echo "   stored."
 
-echo "==> 3/3 cycle the ASG instance so user-data re-runs with the PAT present"
+echo "==> 4/4 cycle the ASG instance so user-data re-runs with the PAT present"
 IID="$(aws autoscaling describe-auto-scaling-groups --region "$REGION" \
   --auto-scaling-group-names "$ASG" \
   --query 'AutoScalingGroups[0].Instances[0].InstanceId' --output text 2>/dev/null || echo None)"

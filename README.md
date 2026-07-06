@@ -10,19 +10,24 @@ Kinetics, with transfer learning) on **SageMaker HyperPod orchestrated by EKS** 
 ## Layout
 
 ```
-terraform/                  # IaC — split into FOUR state layers (one S3 bucket, 4 keys)
+terraform/                  # IaC — split into FIVE state layers (one S3 bucket, 5 keys)
   bootstrap/                # Applied first, from a laptop. Own state. ECR + GitHub OIDC
                             #   provider + the CI roles (ecr-push / tf-plan / tf-apply)
+  network/                  # Layer 0 — VPC/NAT/subnets ONLY (key: network.tfstate).
+    modules/vpc/            #   The shared substrate infra + runner read via remote_state.
+                            #   Split out so the runner stands up from just bootstrap →
+                            #   network → runner, ahead of the full infra bring-up.
   infra/                    # Layer 1 — AWS-API ONLY (key: terraform.tfstate)
-    modules/                #   vpc, eks (+ tiered access entries), client_vpn, iam,
-                            #   karpenter, storage, hyperpod, msk, cognito, frontend,
-                            #   observability, cost, mlflow. NO kubernetes/helm providers.
+    modules/                #   eks (+ tiered access entries), client_vpn, iam, karpenter,
+                            #   storage, hyperpod, msk, cognito, frontend, observability,
+                            #   cost, mlflow. Reads the VPC from the network layer's
+                            #   remote_state. NO kubernetes/helm providers.
   cluster/                  # Layer 2 — CLUSTER-API (key: cluster.tfstate). kubernetes/
     modules/                #   helm/kubectl configured from infra's remote_state.
     rbac/ci-deployer.yaml   #   argocd bootstrap + ci-deployer RBAC + Pod Identity assoc.
   runner/                   # Layer 3 — self-hosted GitHub Actions runner (key:
     modules/github_runner/  #   runner.tfstate). Chicken-egg CI prerequisite; reads the
-                            #   VPC from infra remote_state. Applied clean (no -target).
+                            #   VPC from the NETWORK remote_state. Applied clean (no -target).
 training/                   # PyTorch CNN-LSTM trainer (modular, no notebooks)
   src/kinetics_trainer/     # config, data, model, engine, checkpoint, distributed
     predictor.py            # backend-agnostic Predictor (shared by both serving paths)
@@ -56,12 +61,14 @@ Makefile                    # make validate / image-* / stage-data / teardown
 
 ## Provision — the Terraform sequence
 
-The stack is **four state layers** applied in order. The split exists because a
-Terraform provider must not be configured from a resource in its own state:
-`infra` is **AWS-API only** (runs anywhere, incl. GitHub-hosted CI), while `cluster`
-uses the `kubernetes`/`helm`/`kubectl` providers configured from `infra`'s
-**remote_state** and only it needs the VPN-locked K8s API. Every layer is a clean,
-**un-targeted** `apply`.
+The stack is **five state layers** applied in order. The split exists because a
+Terraform provider must not be configured from a resource in its own state, and
+because the self-hosted runner only ever needed the VPC: `network` is just the
+VPC/NAT/subnets; `infra` is **AWS-API only** (runs anywhere, incl. GitHub-hosted
+CI) and reads the VPC from `network`'s **remote_state**; `cluster` uses the
+`kubernetes`/`helm`/`kubectl` providers configured from `infra`'s **remote_state**
+and only it needs the VPN-locked K8s API. Every layer is a clean, **un-targeted**
+`apply`.
 
 ```bash
 # 0. Bootstrap stack (own state): ECR + GitHub OIDC provider + CI roles. Then wire
@@ -69,14 +76,21 @@ uses the `kubernetes`/`helm`/`kubectl` providers configured from `infra`'s
 cd terraform/bootstrap && terraform init && terraform apply
 ENVIRONMENT=prod ../../scripts/setup-github-ci.sh
 
-# 1+2. Cluster-access bootstrap — ONE command, run by a cluster admin ON THE VPN.
-#    Applies infra (with enable_hyperpod=false so it's a clean apply) → pauses for
-#    you to connect the Client VPN → applies the cluster layer (ci-deployer RBAC +
-#    ArgoCD). No -target, no expected failures.
-RUNNER_PAT=… ENVIRONMENT=prod ../../scripts/bootstrap-cluster-access.sh   # from repo root
+# 1. Network layer (VPC/NAT/subnets) — tiny, AWS-API only, no VPN. The runner and
+#    infra layers both read it via remote_state. (bootstrap-cluster-access.sh and
+#    bootstrap-runner.sh also apply it defensively, so this is idempotent.)
+terraform -chdir=terraform/network init && \
+  terraform -chdir=terraform/network apply -var-file=terraform.tfvars.prod
 
-# 3. Self-hosted CI runner (its own layer; reads the infra VPC). Seeds the PAT.
+# 2. Self-hosted CI runner (its own layer; reads the VPC from the NETWORK layer —
+#    NOT infra). No VPN. Seeds the PAT. Now the runner is up before infra/cluster.
 RUNNER_PAT=… ENVIRONMENT=prod ./scripts/bootstrap-runner.sh
+
+# 3. Cluster-access bootstrap — ONE command, run by a cluster admin ON THE VPN.
+#    Re-checks network → applies infra (enable_hyperpod=false, a clean apply) →
+#    pauses for you to connect the Client VPN → applies the cluster layer
+#    (ci-deployer RBAC + ArgoCD). No -target, no expected failures.
+RUNNER_PAT=… ENVIRONMENT=prod ./scripts/bootstrap-cluster-access.sh   # from repo root
 
 # 4. Once ArgoCD shows `hyperpod-dependencies` Synced+Healthy, bring HyperPod up
 #    (default enable_hyperpod=true) — the SageMaker cluster now creates cleanly.
@@ -86,8 +100,9 @@ aws eks update-kubeconfig --region <region> --name <cluster>   # from infra outp
 ```
 
 For a plain dev bring-up (public cluster, no VPN gymnastics) you can just apply the
-layers in order: `terraform -chdir=terraform/infra apply -var-file=terraform.tfvars.dev`
-→ `terraform -chdir=terraform/cluster apply`. **Steady state runs in CI**:
+layers in order: `terraform -chdir=terraform/network apply -var-file=terraform.tfvars.dev`
+→ `terraform -chdir=terraform/infra apply -var-file=terraform.tfvars.dev` →
+`terraform -chdir=terraform/cluster apply`. **Steady state runs in CI**:
 `terraform-apply` runs **infra (GitHub-hosted) → cluster (self-hosted VPC runner)`,
 the `cluster_apply` job `needs` the infra apply.
 
@@ -384,7 +399,7 @@ Workflows in `.github/workflows/`:
 
 | Workflow | Trigger | Runner | Does |
 |---|---|---|---|
-| `terraform-validate` / `-lint` | PR/push to `terraform/**` | hosted | fmt+validate (matrix: infra/cluster/runner), tflint |
+| `terraform-validate` / `-lint` | PR/push to `terraform/**` | hosted | fmt+validate (matrix: network/infra/cluster/runner), tflint |
 | `terraform-plan` | PR | infra→**hosted**, cluster→**self-hosted** | OIDC→plan role; comments the plan per layer |
 | `terraform-apply` | push to `main` / dispatch | infra→**hosted**, `cluster_apply`→**self-hosted** | infra (saved plan) → then cluster (needs infra); `production` env approval |
 | `docker-build` | push to `training/**` | hosted | buildx amd64 → ECR (`sha-`/`serve-`/`seldon-`); ArgoCD Image Updater bumps tags |
@@ -403,11 +418,13 @@ repo variables from `terraform output`. The `kinetics-training` ArgoCD app is
 ## Teardown (cost-aware destroy)
 
 `terraform destroy` alone won't finish cleanly: the layers must go **cluster →
-infra** (the cluster layer's providers read the live EKS endpoint, so tear it down
-while the cluster is still up — on the VPN), S3 buckets have no `force_destroy` (and
-are versioned), and Karpenter-launched nodes aren't Terraform-managed.
-`scripts/teardown.sh` (`make teardown`) handles it — destroys the cluster layer
-first, drains NodeClaims, empties every bucket (incl. versions), then destroys infra.
+infra → runner → network** (the cluster layer's providers read the live EKS
+endpoint, so tear it down while the cluster is still up — on the VPN; and the
+runner's ENIs sit in the network subnets, so it must go before the network layer),
+S3 buckets have no `force_destroy` (and are versioned), and Karpenter-launched nodes
+aren't Terraform-managed. `scripts/teardown.sh` (`make teardown`) handles it —
+destroys the cluster layer first, drains NodeClaims, empties every bucket (incl.
+versions), destroys infra, then the runner, then the network layer last.
 
 ```bash
 make teardown                          # prompts once, then destroys
