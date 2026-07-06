@@ -7,6 +7,7 @@ on:
       - "terraform/**"
       - "training/Dockerfile*"
       - ".checkov.yaml"
+      - "policy/**"
       - ".github/workflows/terraform-scan.yml"
   workflow_dispatch:
 
@@ -15,6 +16,34 @@ permissions:
   pull-requests: write # infracost comment
 
 jobs:
+  # Rego unit tests — static, no AWS creds. Guards the plan-time gate (the
+  # policies in policy/ that terraform-plan / terraform-apply enforce against the
+  # tfplan JSON) from silently breaking. Uses the same pinned Conftest.
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Conftest
+        env:
+          CONFTEST_VERSION: "0.56.0"
+        run: |
+          set -euo pipefail
+          base="https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}"
+          tarball="conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          curl -fsSL "${base}/${tarball}"    -o "${tarball}"
+          curl -fsSL "${base}/checksums.txt" -o checksums.txt
+          grep " ${tarball}\$" checksums.txt | sha256sum -c -
+          tar -xzf "${tarball}" conftest && sudo install -m 0755 conftest /usr/local/bin/conftest
+      - name: conftest verify (rego unit tests)
+        run: conftest verify --policy policy/
+
+      # Org supply-chain gate on the Dockerfiles (approved base registries, no
+      # curl|sh) — complements Checkov's generic Dockerfile misconfig checks.
+      - name: conftest test (Dockerfiles)
+        run: |
+          conftest test training/Dockerfile training/Dockerfile.serve training/Dockerfile.seldon \
+            --parser dockerfile --policy policy --namespace docker
+
   checkov:
     runs-on: ubuntu-latest
     steps:

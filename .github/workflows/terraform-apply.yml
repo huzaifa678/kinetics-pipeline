@@ -78,6 +78,15 @@ jobs:
       - name: Plan
         run: terraform plan ${{ steps.profile.outputs.var_files }} -input=false -lock-timeout=120s -out=tfplan
 
+      # Gate the frozen plan BEFORE it is uploaded for the human approval — the
+      # same OPA/Conftest policies as the PR plan, on the exact plan that applies.
+      # A `deny` fails here, so a violating plan never reaches the apply job.
+      - name: Policy (OPA / Conftest)
+        uses: ./.github/actions/opa-policy
+        with:
+          working-directory: terraform/infra
+          plan-file: tfplan
+
       - name: Plan to run summary
         run: |
           {

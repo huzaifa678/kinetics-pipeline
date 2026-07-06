@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        layer: [infra, cluster, runner] # separate state layers since the split
+        layer: [network, infra, cluster, runner] # separate state layers since the split
     defaults:
       run:
         working-directory: terraform/${{ matrix.layer }}
