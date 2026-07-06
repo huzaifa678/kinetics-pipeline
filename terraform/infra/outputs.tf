@@ -30,8 +30,8 @@ output "environment" {
 }
 
 output "vpc_id" {
-  description = "VPC ID (AWS Load Balancer Controller provisions ALBs here; the runner layer launches the runner here)."
-  value       = module.vpc.vpc_id
+  description = "VPC ID (passthrough from the network layer; AWS Load Balancer Controller provisions ALBs here)."
+  value       = local.network.vpc_id
 }
 
 output "name" {
@@ -40,8 +40,8 @@ output "name" {
 }
 
 output "private_subnet_ids" {
-  description = "Private subnet IDs — the runner layer places the self-hosted runner ASG here (NAT egress)."
-  value       = module.vpc.private_subnet_ids
+  description = "Private subnet IDs (passthrough from the network layer; NAT egress)."
+  value       = local.network.private_subnet_ids
 }
 
 output "hyperpod_cluster_arn" {

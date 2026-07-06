@@ -38,16 +38,10 @@ data "aws_route53_zone" "core" {
 }
 
 # ---------------------------------------------------------------------------
-# Networking
+# Networking lives in the terraform/network layer (see remote_state.tf) — the
+# VPC/NAT/subnets are read back via local.network so the runner can stand up
+# from just bootstrap → network → runner, ahead of this layer.
 # ---------------------------------------------------------------------------
-module "vpc" {
-  source = "./modules/vpc"
-
-  name     = local.name
-  vpc_cidr = var.vpc_cidr
-  az_count = var.az_count
-  tags     = local.common_tags
-}
 
 # ---------------------------------------------------------------------------
 # EKS control plane + always-on CPU system node group.
@@ -58,9 +52,9 @@ module "eks" {
 
   name               = local.name
   kubernetes_version = var.kubernetes_version
-  vpc_id             = module.vpc.vpc_id
-  vpc_cidr           = var.vpc_cidr
-  private_subnet_ids = module.vpc.private_subnet_ids
+  vpc_id             = local.network.vpc_id
+  vpc_cidr           = local.network.vpc_cidr
+  private_subnet_ids = local.network.private_subnet_ids
 
   system_node_instance_type = var.system_node_instance_type
   system_node_desired_size  = var.system_node_desired_size
@@ -73,7 +67,7 @@ module "eks" {
   # egress IP for AWS Client VPN clients routed through this VPC — plus any extra
   # CIDRs (e.g. CI egress) from var.cluster_endpoint_public_access_cidrs.
   cluster_endpoint_public_access_cidrs = concat(
-    [for ip in module.vpc.nat_public_ips : "${ip}/32"],
+    [for ip in local.network.nat_public_ips : "${ip}/32"],
     var.cluster_endpoint_public_access_cidrs,
   )
 
@@ -93,9 +87,9 @@ module "client_vpn" {
   count  = var.enable_client_vpn ? 1 : 0
 
   name              = local.name
-  vpc_id            = module.vpc.vpc_id
-  vpc_cidr          = var.vpc_cidr
-  subnet_ids        = module.vpc.private_subnet_ids
+  vpc_id            = local.network.vpc_id
+  vpc_cidr          = local.network.vpc_cidr
+  subnet_ids        = local.network.private_subnet_ids
   client_cidr_block = var.vpn_client_cidr_block
 
   saml_metadata_document              = file("${path.module}/${var.vpn_saml_metadata_file}")
@@ -133,9 +127,9 @@ module "msk" {
   count  = var.enable_msk ? 1 : 0
 
   name               = local.name
-  vpc_id             = module.vpc.vpc_id
-  vpc_cidr           = var.vpc_cidr
-  private_subnet_ids = module.vpc.private_subnet_ids
+  vpc_id             = local.network.vpc_id
+  vpc_cidr           = local.network.vpc_cidr
+  private_subnet_ids = local.network.private_subnet_ids
 
   kafka_version          = var.kafka_version
   broker_instance_type   = var.msk_broker_instance_type
@@ -287,9 +281,9 @@ module "storage" {
   source = "./modules/storage"
 
   name                      = local.name
-  private_subnet_id         = module.vpc.private_subnet_ids[0]
-  vpc_id                    = module.vpc.vpc_id
-  vpc_cidr                  = var.vpc_cidr
+  private_subnet_id         = local.network.private_subnet_ids[0]
+  vpc_id                    = local.network.vpc_id
+  vpc_cidr                  = local.network.vpc_cidr
   fsx_storage_capacity_gb   = var.fsx_storage_capacity_gb
   checkpoint_retention_days = var.checkpoint_retention_days
 
@@ -308,7 +302,7 @@ module "hyperpod" {
   name               = local.name
   eks_cluster_arn    = module.eks.cluster_arn
   execution_role_arn = module.iam.hyperpod_execution_role_arn
-  subnet_ids         = module.vpc.private_subnet_ids
+  subnet_ids         = local.network.private_subnet_ids
   security_group_ids = [module.eks.node_security_group_id]
   lifecycle_bucket   = module.storage.lifecycle_bucket_name
 
