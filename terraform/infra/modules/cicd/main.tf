@@ -239,5 +239,51 @@ resource "aws_iam_role_policy" "frontend_deploy" {
   policy = data.aws_iam_policy_document.frontend_deploy[0].json
 }
 
+# ===========================================================================
+# Role 5: cluster-bootstrap (cluster-bootstrap.yml, workflow_dispatch only).
+# The ONE-TIME actor that creates the escalation-capable `ci-deployer` RBAC +
+# ArgoCD. Kubernetes escalation-prevention: creating a ClusterRole that itself
+# holds `bind`/`escalate` requires a cluster-admin — so THIS role (and only this
+# role) is granted a cluster-admin EKS access entry (infra module var
+# `cluster_bootstrap_principal_arns`). The steady-state apply role stays the
+# least-privilege `ci-deployer` group — it never becomes cluster-admin.
+#
+# Least-privilege confinement: trust is locked to the PROTECTED GitHub
+# Environment ONLY (var.bootstrap_environment, no branch-push subject and
+# StringEquals not StringLike), so it is assumable solely through an approved
+# deployment — a gated, auditable break-glass admin, not standing power on the
+# runner. AWS perms mirror the apply role (it runs the same cluster terraform).
+# ===========================================================================
+data "aws_iam_policy_document" "assume_bootstrap" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [local.provider_arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${local.repo}:environment:${var.bootstrap_environment}"]
+    }
+  }
+}
+
+resource "aws_iam_role" "cluster_bootstrap" {
+  name               = "${var.name}-gha-cluster-bootstrap"
+  assume_role_policy = data.aws_iam_policy_document.assume_bootstrap.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "cluster_bootstrap_apply" {
+  role       = aws_iam_role.cluster_bootstrap.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/${var.apply_managed_policy}"
+}
+
 data "aws_partition" "current" {}
 data "aws_caller_identity" "current" {}

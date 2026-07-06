@@ -1,0 +1,76 @@
+name: cluster-bootstrap
+
+# ONE-TIME (and idempotent) bootstrap of the CLUSTER layer from CI, replacing the
+# manual "cluster admin on the VPN" step. Kubernetes escalation-prevention means
+# creating the escalation-capable `ci-deployer` RBAC + ArgoCD needs a cluster-admin
+# — so this job assumes the dedicated, gated `…-gha-cluster-bootstrap` role (the
+# ONLY principal with a cluster-admin EKS access entry). It runs on the in-VPC
+# self-hosted runner, so no VPN. After this succeeds once, the steady-state
+# terraform-apply `cluster_apply` job (least-privilege tf-apply / ci-deployer
+# group) reconciles the cluster layer forever.
+#
+# Least-privilege: manual dispatch ONLY, pinned to the protected `production`
+# Environment (required reviewers), and the bootstrap role's OIDC trust is locked
+# to environment:production — so an approved deployment is the only way to obtain
+# cluster-admin. The runner's normal identity never holds it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "tfvars profile / protected Environment to bootstrap (must have a cluster_bootstrap access entry)."
+        type: choice
+        default: prod
+        options:
+          - prod
+          - production
+
+permissions:
+  id-token: write # OIDC
+  contents: read
+
+env:
+  TF_VERSION: "1.10.5"
+
+concurrency:
+  group: cluster-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    # The protected Environment gate (required reviewers) is the human approval;
+    # the bootstrap role can ONLY be assumed from this environment's OIDC subject.
+    environment: production
+    runs-on: [self-hosted, vpc] # in-VPC runner reaches the private K8s API — no VPN
+    defaults:
+      run:
+        working-directory: terraform/cluster
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve cluster tfvars (optional — defaults if absent)
+        id: profile
+        env:
+          PROFILE: ${{ github.event.inputs.environment }}
+        run: |
+          f="terraform.tfvars.${PROFILE}"
+          if [ -f "$f" ]; then echo "var_files=-var-file=$f" >> "$GITHUB_OUTPUT";
+          else echo "::notice::cluster: no $f (using defaults)"; echo "var_files=" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Configure AWS credentials (OIDC → gated cluster-admin role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_CLUSTER_BOOTSTRAP }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "${{ env.TF_VERSION }}"
+          # Self-hosted runner has no system `node` on PATH; disable the wrapper.
+          terraform_wrapper: false
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Apply (creates ci-deployer RBAC + ArgoCD; idempotent on re-run)
+        run: terraform apply ${{ steps.profile.outputs.var_files }} -input=false -lock-timeout=120s -auto-approve

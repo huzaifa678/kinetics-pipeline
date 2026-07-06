@@ -1,5 +1,7 @@
 set -euo pipefail
 
+# Fallback to manual apply
+
 ENVIRONMENT="${ENVIRONMENT:-prod}"
 PROJECT="${PROJECT:-kinetics-pipeline}"
 REGION="${REGION:-us-east-1}"

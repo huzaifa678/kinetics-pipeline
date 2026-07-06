@@ -50,6 +50,8 @@ ROLE_PLAN="$(tfout gha_terraform_plan_role_arn)"
 [ -n "$ROLE_PLAN" ] || ROLE_PLAN="arn:aws:iam::${ACCOUNT_ID}:role/${NAME}-gha-tf-plan"
 ROLE_APPLY="$(tfout gha_terraform_apply_role_arn)"
 [ -n "$ROLE_APPLY" ] || ROLE_APPLY="arn:aws:iam::${ACCOUNT_ID}:role/${NAME}-gha-tf-apply"
+ROLE_CLUSTER_BOOTSTRAP="$(tfout gha_cluster_bootstrap_role_arn)"
+[ -n "$ROLE_CLUSTER_BOOTSTRAP" ] || ROLE_CLUSTER_BOOTSTRAP="arn:aws:iam::${ACCOUNT_ID}:role/${NAME}-gha-cluster-bootstrap"
 
 echo "==> Setting repo variables on $REPO"
 gh variable set AWS_REGION       --repo "$REPO" --body "$REGION"
@@ -57,6 +59,7 @@ gh variable set ECR_REPOSITORY   --repo "$REPO" --body "$ECR_REPOSITORY"
 gh variable set AWS_ROLE_ECR_PUSH --repo "$REPO" --body "$ROLE_ECR"
 gh variable set AWS_ROLE_TF_PLAN --repo "$REPO" --body "$ROLE_PLAN"
 gh variable set AWS_ROLE_TF_APPLY --repo "$REPO" --body "$ROLE_APPLY"
+gh variable set AWS_ROLE_CLUSTER_BOOTSTRAP --repo "$REPO" --body "$ROLE_CLUSTER_BOOTSTRAP"
 gh variable set GITOPS_REPO_NAME --repo "$REPO" --body "$GITOPS_REPO_NAME"
 
 

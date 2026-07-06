@@ -22,6 +22,16 @@ cluster_deployer_principal_arns = [
   "arn:aws:iam::533267178572:role/kinetics-pipeline-prod-gha-tf-apply",
 ]
 
+# Gated cluster-admin for the ONE-TIME ci-deployer RBAC + ArgoCD bootstrap. This
+# role is assumable ONLY from the protected `production` GitHub Environment
+# (cluster-bootstrap.yml, workflow_dispatch + required-reviewer approval), so the
+# runner's steady-state identity (tf-apply, above) is never cluster-admin. Setting
+# this is what lets the runner apply the cluster layer in CI instead of a laptop
+# admin on the VPN. Clear it to fall back to scripts/bootstrap-cluster-access.sh.
+cluster_bootstrap_principal_arns = [
+  "arn:aws:iam::533267178572:role/kinetics-pipeline-prod-gha-cluster-bootstrap",
+]
+
 # CI plan role (assumed by the runner on PR/plan). Read-only access entry so
 # `terraform plan` can refresh in-cluster resources (argocd secret, Helm release
 # secrets, RBAC) without a 401. AmazonEKSAdminViewPolicy = read incl. secrets.

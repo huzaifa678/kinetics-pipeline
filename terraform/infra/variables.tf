@@ -54,6 +54,20 @@ variable "cluster_admin_principal_arns" {
   default     = []
 }
 
+variable "cluster_bootstrap_principal_arns" {
+  description = <<-EOT
+    IAM principal ARNs granted a cluster-admin access entry for the ONE-TIME
+    ci-deployer RBAC + ArgoCD bootstrap (k8s escalation-prevention needs an admin
+    to create the escalation-capable ci-deployer ClusterRole). Set this to the
+    gated `…-gha-cluster-bootstrap` role ARN (assumable only from the protected
+    GitHub Environment). Kept separate from the deployer role so steady-state CI
+    never holds cluster-admin. Empty = keep the cluster bootstrap a manual laptop
+    step (scripts/bootstrap-cluster-access.sh).
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "cluster_deployer_principal_arns" {
   description = <<-EOT
     IAM principal ARNs (e.g. the CI apply role) granted a NON-admin EKS access

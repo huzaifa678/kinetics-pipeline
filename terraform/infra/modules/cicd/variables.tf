@@ -27,6 +27,12 @@ variable "apply_environment" {
   default     = "production"
 }
 
+variable "bootstrap_environment" {
+  description = "Protected GitHub Environment (required reviewers) that may assume the cluster-bootstrap role. Its OIDC trust is locked to environment:<this> ONLY — no branch push — so the one-time cluster-admin RBAC bootstrap needs an approved deployment."
+  type        = string
+  default     = "production"
+}
+
 variable "apply_environments" {
   description = "GitHub Environments allowed to assume the apply role. The terraform-apply dispatch maps each tfvars profile to a same-named Environment, so configure required-reviewer protection per env (e.g. on `prod`) in repo Settings."
   type        = list(string)

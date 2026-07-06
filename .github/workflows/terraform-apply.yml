@@ -18,6 +18,14 @@ on:
           - test
           - novpn # dev + Client VPN OFF
           - kafka # dev + MSK ON
+      enable_hyperpod:
+        description: "HyperPod cold-start control. 'default' = use the tfvars value. Set 'false' for the FIRST infra apply, then 'true' — but ONLY after ArgoCD's `hyperpod-dependencies` chart is Synced+Healthy (the SageMaker cluster CREATE FAILS otherwise)."
+        type: choice
+        default: "default"
+        options:
+          - default # honour the profile's tfvars (steady state)
+          - "false" # cold-start phase 1 — SageMaker cluster off
+          - "true" # phase 2 — only once hyperpod-dependencies is Synced+Healthy
 
 permissions:
   id-token: write # OIDC
@@ -61,6 +69,21 @@ jobs:
           echo "var_files=$files" >> "$GITHUB_OUTPUT"
           echo "### Plan for profile \`$PROFILE\` ($files)" >> "$GITHUB_STEP_SUMMARY"
 
+          # HyperPod cold-start override. 'default' keeps the tfvars value; a
+          # -var wins over -var-file, so this cleanly forces the two-phase
+          # bring-up (false first, true once the deps chart is healthy) from CI.
+          HP="${{ github.event.inputs.enable_hyperpod || 'default' }}"
+          extra=""
+          if [ "$HP" != "default" ]; then
+            extra="-var=enable_hyperpod=$HP"
+            echo "- HyperPod override: \`enable_hyperpod=$HP\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "$HP" = "true" ]; then
+            echo "::warning::enable_hyperpod=true — the SageMaker cluster CREATE will FAIL unless ArgoCD 'hyperpod-dependencies' is Synced+Healthy. Verify it before approving the apply."
+            echo "> ⚠️ **enable_hyperpod=true**: this apply FAILS unless ArgoCD \`hyperpod-dependencies\` is Synced+Healthy. Verify before approving." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "extra_vars=$extra" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -76,7 +99,7 @@ jobs:
         run: terraform init -input=false
 
       - name: Plan
-        run: terraform plan ${{ steps.profile.outputs.var_files }} -input=false -lock-timeout=120s -out=tfplan
+        run: terraform plan ${{ steps.profile.outputs.var_files }} ${{ steps.profile.outputs.extra_vars }} -input=false -lock-timeout=120s -out=tfplan
 
       # Gate the frozen plan BEFORE it is uploaded for the human approval — the
       # same OPA/Conftest policies as the PR plan, on the exact plan that applies.
@@ -152,8 +175,10 @@ jobs:
   # 3) CLUSTER layer (kubernetes/helm/kubectl). MUST run after the infra apply —
   #    its providers read the infra layer's fresh remote state. Not a saved plan:
   #    the cluster plan depends on infra's just-applied outputs, so it plans+applies
-  #    here. Same env gate + tf-apply role. First-ever run must be an admin on the
-  #    VPN (ci-deployer RBAC escalation) — see scripts/bootstrap-cluster-access.sh.
+  #    here. Same env gate + least-privilege tf-apply role (ci-deployer group). The
+  #    ONE-TIME escalation-capable bootstrap (ci-deployer RBAC + ArgoCD) is done by
+  #    the gated cluster-bootstrap.yml workflow (dispatch, cluster-admin role); after
+  #    that, this job reconciles forever. (Laptop fallback: bootstrap-cluster-access.sh.)
   cluster_apply:
     needs: apply
     runs-on: [self-hosted, vpc] # ONLY layer that needs the VPN-locked K8s API

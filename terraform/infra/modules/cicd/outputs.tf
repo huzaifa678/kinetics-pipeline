@@ -22,3 +22,8 @@ output "frontend_deploy_role_arn" {
   description = "Role ARN for frontend-deploy.yml (AWS_ROLE_FRONTEND_DEPLOY); null when the frontend isn't enabled."
   value       = var.frontend_bucket_arn != "" ? aws_iam_role.frontend_deploy[0].arn : null
 }
+
+output "cluster_bootstrap_role_arn" {
+  description = "Role ARN for cluster-bootstrap.yml (AWS_ROLE_CLUSTER_BOOTSTRAP). Gated to the protected environment; the ONLY principal granted a cluster-admin EKS access entry."
+  value       = aws_iam_role.cluster_bootstrap.arn
+}
