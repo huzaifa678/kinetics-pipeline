@@ -17,19 +17,10 @@ variable "environment" {
 }
 
 # ---------------------------------------------------------------------------
-# Networking
+# Networking — the VPC (and its CIDR / AZ count) lives in the terraform/network
+# layer now; this layer reads vpc_id / subnets / NAT EIPs / vpc_cidr back via
+# remote_state (see remote_state.tf). No vpc_cidr / az_count vars here.
 # ---------------------------------------------------------------------------
-variable "vpc_cidr" {
-  description = "CIDR block for the VPC."
-  type        = string
-  default     = "10.0.0.0/16"
-}
-
-variable "az_count" {
-  description = "Number of Availability Zones to spread subnets across."
-  type        = number
-  default     = 2
-}
 
 # ---------------------------------------------------------------------------
 # EKS

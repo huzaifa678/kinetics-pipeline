@@ -11,7 +11,8 @@ terraform {
   # RUNNER layer — the self-hosted GitHub Actions runner is a chicken-egg CI
   # prerequisite (like terraform/bootstrap): CI can't create the runner CI runs
   # on. Its own state so it stands up with a clean, un-targeted apply from a
-  # laptop, reading the VPC from the infra layer's remote state.
+  # laptop, reading the VPC from the network layer's remote state (NOT the full
+  # infra layer — that's the whole point of the network split).
   backend "s3" {
     bucket       = "kinetics-pipeline-bucket-ec371a2a"
     key          = "kinetics-pipeline-bucket/runner.tfstate"
@@ -27,7 +28,7 @@ provider "aws" {
   default_tags {
     tags = {
       Project     = var.project
-      Environment = local.infra.environment
+      Environment = local.network.environment
       ManagedBy   = "terraform"
     }
   }

@@ -1,6 +1,3 @@
-# The runner only needs the VPC (name + vpc_id + private subnets + environment),
-# which now lives in its own layer (terraform/network) — so the runner stands up
-# after just bootstrap → network → runner, without the full infra layer applied.
 data "terraform_remote_state" "network" {
   backend = "s3"
   config = {
