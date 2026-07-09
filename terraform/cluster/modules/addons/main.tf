@@ -14,6 +14,14 @@ resource "aws_eks_pod_identity_association" "ack_sagemaker" {
   tags            = var.tags
 }
 
+resource "aws_eks_pod_identity_association" "external_secrets" {
+  cluster_name    = var.cluster_name
+  namespace       = "external-secrets"
+  service_account = "external-secrets"
+  role_arn        = var.external_secrets_role_arn
+  tags            = var.tags
+}
+
 # ETL shard-build Job SA -> S3 write role (Pod Identity). Namespace must match
 # where the etl-shards Job is applied (default "default").
 resource "aws_eks_pod_identity_association" "etl_shards" {
@@ -21,6 +29,16 @@ resource "aws_eks_pod_identity_association" "etl_shards" {
   namespace       = var.etl_shards_namespace
   service_account = "etl-shards"
   role_arn        = var.etl_shards_role_arn
+  tags            = var.tags
+}
+
+resource "aws_eks_pod_identity_association" "keda_metrics" {
+  count = var.enable_managed_prometheus ? 1 : 0
+
+  cluster_name    = var.cluster_name
+  namespace       = "keda"
+  service_account = "keda-operator"
+  role_arn        = var.keda_metrics_role_arn
   tags            = var.tags
 }
 
@@ -57,8 +75,6 @@ resource "aws_eks_pod_identity_association" "external_dns" {
   tags            = var.tags
 }
 
-# In-cluster Prometheus SA -> AMP remote_write role (Pod Identity). The SA name
-# is the kube-prometheus-stack default (release "kube-prometheus-stack").
 resource "aws_eks_pod_identity_association" "amp_remote_write" {
   count = var.enable_managed_prometheus ? 1 : 0
 
@@ -214,6 +230,7 @@ resource "helm_release" "argocd_apps" {
     helm_release.argocd,
     aws_eks_pod_identity_association.karpenter,
     aws_eks_pod_identity_association.ack_sagemaker,
+    aws_eks_pod_identity_association.external_secrets,
   ]
 }
 

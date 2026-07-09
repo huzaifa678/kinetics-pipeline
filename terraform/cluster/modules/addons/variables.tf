@@ -31,6 +31,16 @@ variable "karpenter_role_arn" {
   type        = string
 }
 
+variable "external_secrets_role_arn" {
+  description = "IAM role ARN used by the External Secrets Operator via EKS Pod Identity."
+  type        = string
+}
+
+variable "keda_metrics_role_arn" {
+  description = "Pod Identity role ARN for the KEDA metrics adapter"
+  type        = string
+}
+
 variable "etl_shards_role_arn" {
   description = "Pod Identity role ARN for the ETL shard-build Job (S3 write)."
   type        = string

@@ -33,6 +33,16 @@ output "karpenter_role_arn" {
   value       = aws_iam_role.karpenter_controller.arn
 }
 
+output "external_secrets_role_arn" {
+  description = "Pod Identity role ARN for the External Secrets controller"
+  value       = aws_iam_role.external_secrets.arn
+}
+
+output "keda_metrics_role_arn" {
+  description = "Pod Identity role ARN for the KEDA AMP-trigger fallback (empty when AMP is off)."
+  value       = var.enable_managed_prometheus ? aws_iam_role.keda_amp[0].arn : ""
+}
+
 output "karpenter_node_role_arn" {
   description = "EC2 node role ARN Karpenter assigns to provisioned nodes."
   value       = aws_iam_role.karpenter_node.arn

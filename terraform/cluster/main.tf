@@ -26,10 +26,12 @@ module "addons" {
   cluster_name = local.infra.eks_cluster_name
   environment  = local.infra.environment
 
-  ack_sagemaker_role_arn = local.infra.ack_sagemaker_role_arn
-  karpenter_role_arn     = local.infra.karpenter_role_arn
-  etl_shards_role_arn    = local.infra.etl_shards_role_arn
-  image_updater_role_arn = local.infra.image_updater_role_arn
+  ack_sagemaker_role_arn    = local.infra.ack_sagemaker_role_arn
+  karpenter_role_arn        = local.infra.karpenter_role_arn
+  external_secrets_role_arn = local.infra.external_secrets_role_arn
+  keda_metrics_role_arn     = local.infra.keda_metrics_role_arn
+  etl_shards_role_arn       = local.infra.etl_shards_role_arn
+  image_updater_role_arn    = local.infra.image_updater_role_arn
 
   enable_argocd            = var.enable_argocd
   enable_hyperpod_operator = var.enable_hyperpod_operator
