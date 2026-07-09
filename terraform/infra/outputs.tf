@@ -57,6 +57,8 @@ output "external_dns_domain_filter" {
 # Pod Identity role ARNs (module.iam) the cluster layer's addons associate to SAs.
 output "ack_sagemaker_role_arn" { value = module.iam.ack_sagemaker_role_arn }
 output "karpenter_role_arn" { value = module.iam.karpenter_role_arn }
+output "external_secrets_role_arn" { value = module.iam.external_secrets_role_arn }
+output "keda_metrics_role_arn" { value = module.iam.keda_metrics_role_arn }
 output "etl_shards_role_arn" { value = module.iam.etl_shards_role_arn }
 output "image_updater_role_arn" { value = module.iam.image_updater_role_arn }
 output "aws_lbc_role_arn" { value = module.iam.aws_lbc_role_arn }

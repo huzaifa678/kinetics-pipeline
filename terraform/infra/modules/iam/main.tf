@@ -193,6 +193,42 @@ resource "aws_iam_role_policy" "hyperpod_autoscaler" {
 }
 
 # ===========================================================================
+# KEDA -> AMP (Pod Identity): lets the KEDA operator query the AMP workspace for
+# the Prometheus scaler's AMP-trigger fallback. Gated on enable_managed_prometheus
+# (mirrors amp_remote_write) — the default in-cluster-Prometheus trigger needs no
+# AWS creds, so this role/association only exist when AMP is on. Gating on the flag
+# (not the ARN, which may be unknown at plan) keeps the empty ARN out of the policy.
+# ===========================================================================
+data "aws_iam_policy_document" "keda_amp" {
+  count = var.enable_managed_prometheus ? 1 : 0
+
+  statement {
+    sid    = "AmpQueryMetrics"
+    effect = "Allow"
+    actions = [
+      "aps:QueryMetrics"
+    ]
+    resources = [var.amp_workspace_arn]
+  }
+}
+
+resource "aws_iam_role" "keda_amp" {
+  count = var.enable_managed_prometheus ? 1 : 0
+
+  name               = "${var.name}-keda-amp"
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy" "keda_amp" {
+  count = var.enable_managed_prometheus ? 1 : 0
+
+  name   = "${var.name}-keda-amp"
+  role   = aws_iam_role.keda_amp[0].id
+  policy = data.aws_iam_policy_document.keda_amp[0].json
+}
+
+# ===========================================================================
 # ACK SageMaker controller role (Pod Identity).
 # ===========================================================================
 resource "aws_iam_role" "ack_sagemaker" {
@@ -600,4 +636,39 @@ resource "aws_iam_role_policy" "external_dns" {
   name   = "${var.name}-external-dns"
   role   = aws_iam_role.external_dns[0].id
   policy = data.aws_iam_policy_document.external_dns[0].json
+}
+
+data "aws_iam_policy_document" "external_secrets" {
+  statement {
+    sid    = "ReadPlatformSecrets"
+    effect = "Allow"
+
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:DescribeSecret",
+    ]
+
+    resources = [
+      "arn:${local.partition}:secretsmanager:${local.region}:${local.account_id}:secret:kinetics-*",
+      "arn:${local.partition}:secretsmanager:${local.region}:${local.account_id}:secret:AmazonMSK_*",
+    ]
+  }
+}
+
+resource "aws_iam_role" "external_secrets" {
+  name               = "${var.name}-external-secrets"
+  assume_role_policy = data.aws_iam_policy_document.pod_identity_assume.json
+  tags               = var.tags
+}
+
+resource "aws_iam_policy" "external_secrets" {
+  name   = "${var.name}-external-secrets"
+  policy = data.aws_iam_policy_document.external_secrets.json
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "external_secrets" {
+  role       = aws_iam_role.external_secrets.name
+  policy_arn = aws_iam_policy.external_secrets.arn
 }
