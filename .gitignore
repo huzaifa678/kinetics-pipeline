@@ -12,6 +12,11 @@ override.tf.json
 .terraformrc
 terraform.rc
 
+# Terragrunt (per-unit working caches + saved plans written into live dirs)
+**/.terragrunt-cache/
+terraform/live/**/tfplan
+terraform/live/**/plan.txt
+
 # Lambda build artifacts
 **/lambda/*.zip
 **/lambda/layer/

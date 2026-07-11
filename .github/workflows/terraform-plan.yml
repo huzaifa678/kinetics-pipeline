@@ -8,15 +8,12 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "tfvars profile to plan"
+        description: "env to plan (selects the live/<env> Terragrunt tree)"
         type: choice
         default: dev
         options:
           - dev
           - prod
-          - test
-          - novpn # dev + Client VPN OFF
-          - kafka # dev + MSK ON
 
 permissions:
   id-token: write # required for OIDC
@@ -25,6 +22,9 @@ permissions:
 
 env:
   TF_VERSION: "1.10.5"
+  # PR plans default to the dev tree; dispatch picks dev/prod. Values come from the
+  # unit's Terragrunt inputs (no -var-file).
+  ENV: ${{ github.event.inputs.environment || 'dev' }}
 
 jobs:
   plan:
@@ -39,34 +39,9 @@ jobs:
             runs_on: [self-hosted, vpc]
     defaults:
       run:
-        working-directory: terraform/${{ matrix.layer }}
+        working-directory: terraform/live/${{ github.event.inputs.environment || 'dev' }}/${{ matrix.layer }}
     steps:
       - uses: actions/checkout@v4
-
-      # On dispatch, resolve the profile -> -var-file chain (same mapping as
-      # terraform-apply). On PR, leave it empty to plan with variable defaults.
-      - name: Resolve tfvars profile
-        id: profile
-        env:
-          PROFILE: ${{ github.event.inputs.environment }}
-        run: |
-          files=""
-          case "$PROFILE" in
-            "")    : ;; # PR: variable defaults
-            dev)   files="-var-file=terraform.tfvars.dev" ;;
-            prod)  files="-var-file=terraform.tfvars.prod" ;;
-            test)  files="-var-file=terraform.tfvars.test" ;;
-            novpn) files="-var-file=terraform.tfvars.dev -var-file=terraform.tfvars.novpn" ;;
-            kafka) files="-var-file=terraform.tfvars.dev -var-file=terraform.tfvars.kafka" ;;
-            *) echo "::error::unknown profile '$PROFILE'"; exit 1 ;;
-          esac
-          # Keep only var-files that exist in THIS layer — the cluster layer
-          # legitimately relies on module defaults for some envs (no tfvars file).
-          kept=""
-          for f in $(echo "$files" | tr ' ' '\n' | sed 's/-var-file=//'); do
-            if [ -f "$f" ]; then kept="$kept -var-file=$f"; else echo "::notice::${{ matrix.layer }}: no $f (using defaults)"; fi
-          done
-          echo "var_files=$kept" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -79,34 +54,44 @@ jobs:
           terraform_version: "${{ env.TF_VERSION }}"
           terraform_wrapper: false
 
+      - name: Setup Terragrunt
+        uses: ./.github/actions/setup-terragrunt
+
       - name: Init
-        run: terraform init -input=false
+        run: terragrunt init -input=false
 
       - name: Plan
         id: plan
+        env:
+          LAYER: ${{ matrix.layer }}
         run: |
           set +e
-          terraform plan ${{ steps.profile.outputs.var_files }} -no-color -input=false -lock-timeout=120s -out=tfplan | tee plan.txt
+          terragrunt plan -no-color -input=false -lock-timeout=120s -out="$GITHUB_WORKSPACE/terraform/live/$ENV/$LAYER/tfplan" | tee plan.txt
           echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Policy (OPA / Conftest)
         if: steps.plan.outputs.exitcode == '0'
         uses: ./.github/actions/opa-policy
         with:
-          working-directory: terraform/${{ matrix.layer }}
-          plan-file: tfplan
+          working-directory: terraform/live/${{ env.ENV }}/${{ matrix.layer }}
+          plan-file: ${{ github.workspace }}/terraform/live/${{ env.ENV }}/${{ matrix.layer }}/tfplan
+          tool: terragrunt
 
       - name: Comment plan on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        env:
+          ENVIRONMENT: ${{ env.ENV }}
+          LAYER: ${{ matrix.layer }}
         with:
           script: |
             const fs = require('fs');
-            const layer = '${{ matrix.layer }}';
-            let plan = fs.readFileSync(`terraform/${layer}/plan.txt`, 'utf8');
+            const layer = process.env.LAYER;
+            const environment = process.env.ENVIRONMENT;
+            let plan = fs.readFileSync(`terraform/live/${environment}/${layer}/plan.txt`, 'utf8');
             const max = 60000;
             if (plan.length > max) plan = plan.slice(0, max) + '\n... (truncated)';
-            const body = `### Terraform Plan — \`${layer}\`\n\`\`\`\n${plan}\n\`\`\``;
+            const body = `### Terraform Plan — \`${environment}/${layer}\`\n\`\`\`\n${plan}\n\`\`\``;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -118,7 +103,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           {
-            echo "### Terraform Plan — profile \`${{ github.event.inputs.environment }}\`"
+            echo "### Terraform Plan — env \`${ENV}\` layer \`${{ matrix.layer }}\`"
             echo '```'
             cat plan.txt
             echo '```'

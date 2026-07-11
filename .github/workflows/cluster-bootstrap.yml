@@ -44,18 +44,12 @@ jobs:
     runs-on: [self-hosted, vpc] # in-VPC runner reaches the private K8s API — no VPN
     defaults:
       run:
-        working-directory: terraform/cluster
+        # Prod cluster layer via its Terragrunt unit (values from inputs, not
+        # tfvars). This bootstrap is prod-only — the `production` Environment gate
+        # + cluster_bootstrap role exist only for prod; dev uses the laptop script.
+        working-directory: terraform/live/prod/cluster
     steps:
       - uses: actions/checkout@v4
-
-      - name: Resolve cluster tfvars (optional — defaults if absent)
-        id: profile
-        env:
-          PROFILE: ${{ github.event.inputs.environment }}
-        run: |
-          f="terraform.tfvars.${PROFILE}"
-          if [ -f "$f" ]; then echo "var_files=-var-file=$f" >> "$GITHUB_OUTPUT";
-          else echo "::notice::cluster: no $f (using defaults)"; echo "var_files=" >> "$GITHUB_OUTPUT"; fi
 
       - name: Configure AWS credentials (OIDC → gated cluster-admin role)
         uses: aws-actions/configure-aws-credentials@v4
@@ -69,8 +63,11 @@ jobs:
           # Self-hosted runner has no system `node` on PATH; disable the wrapper.
           terraform_wrapper: false
 
+      - name: Setup Terragrunt
+        uses: ./.github/actions/setup-terragrunt
+
       - name: Init
-        run: terraform init -input=false
+        run: terragrunt init -input=false
 
       - name: Apply (creates ci-deployer RBAC + ArgoCD; idempotent on re-run)
-        run: terraform apply ${{ steps.profile.outputs.var_files }} -input=false -lock-timeout=120s -auto-approve
+        run: terragrunt apply -input=false -lock-timeout=120s -auto-approve

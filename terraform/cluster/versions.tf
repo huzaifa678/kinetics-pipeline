@@ -19,16 +19,11 @@ terraform {
       version = ">= 1.14.0"
     }
   }
-
-  backend "s3" {
-    bucket       = "kinetics-pipeline-bucket-ec371a2a"
-    key          = "kinetics-pipeline-bucket/cluster.tfstate"
-    region       = "us-east-1"
-    use_lockfile = true
-    encrypt      = true
-  }
 }
 
+# The aws provider here is NOT the Terragrunt-generated one (that is disabled for
+# the cluster layer in root.hcl): its region comes from the infra remote_state,
+# and this layer also declares the kubernetes/helm/kubectl providers below.
 # All provider auth comes from the INFRA layer's remote-state outputs (stable
 # values, never "unknown"), NOT from a resource in this state — that's the whole
 # point of the layer split.

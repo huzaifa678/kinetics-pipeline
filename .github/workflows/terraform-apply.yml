@@ -9,21 +9,18 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "tfvars profile to apply"
+        description: "env to apply (selects the live/<env> Terragrunt tree)"
         type: choice
         default: dev
         options:
           - dev
           - prod
-          - test
-          - novpn # dev + Client VPN OFF
-          - kafka # dev + MSK ON
       enable_hyperpod:
-        description: "HyperPod cold-start control. 'default' = use the tfvars value. Set 'false' for the FIRST infra apply, then 'true' — but ONLY after ArgoCD's `hyperpod-dependencies` chart is Synced+Healthy (the SageMaker cluster CREATE FAILS otherwise)."
+        description: "HyperPod cold-start control. 'default' = use the layer's input value. Set 'false' for the FIRST infra apply, then 'true' — but ONLY after ArgoCD's `hyperpod-dependencies` chart is Synced+Healthy (the SageMaker cluster CREATE FAILS otherwise)."
         type: choice
         default: "default"
         options:
-          - default # honour the profile's tfvars (steady state)
+          - default # honour the layer's input (steady state)
           - "false" # cold-start phase 1 — SageMaker cluster off
           - "true" # phase 2 — only once hyperpod-dependencies is Synced+Healthy
 
@@ -33,6 +30,10 @@ permissions:
 
 env:
   TF_VERSION: "1.10.5"
+  # Per-env values now come from Terragrunt inputs (live/<env>/…), NOT tfvars —
+  # the env is selected by DIRECTORY. These resolve the unit dirs for shell steps.
+  INFRA_DIR: terraform/live/${{ github.event.inputs.environment || 'dev' }}/infra
+  CLUSTER_DIR: terraform/live/${{ github.event.inputs.environment || 'dev' }}/cluster
 
 concurrency:
   group: terraform-apply
@@ -40,38 +41,21 @@ concurrency:
 
 jobs:
   # 1) Plan against current main + current state, freeze it to tfplan. Read-only
-  #    tf-plan role — no write creds needed to produce a plan. Ungated so it runs
-  #    immediately; the human gate is on the apply job.
+  #    tf-plan role. Ungated so it runs immediately; the human gate is on apply.
   plan:
     runs-on: ubuntu-latest # infra is AWS-API only — no self-hosted/VPN runner needed
     defaults:
       run:
-        working-directory: terraform/infra
+        working-directory: terraform/live/${{ github.event.inputs.environment || 'dev' }}/infra
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve tfvars profile
+      - name: HyperPod cold-start override
         id: profile
-        env:
-          PROFILE: ${{ github.event.inputs.environment || 'dev' }}
         run: |
-          case "$PROFILE" in
-            dev)   files="-var-file=terraform.tfvars.dev" ;;
-            prod)  files="-var-file=terraform.tfvars.prod" ;;
-            test)  files="-var-file=terraform.tfvars.test" ;;
-            novpn) files="-var-file=terraform.tfvars.dev -var-file=terraform.tfvars.novpn" ;;
-            kafka) files="-var-file=terraform.tfvars.dev -var-file=terraform.tfvars.kafka" ;;
-            *) echo "::error::unknown profile '$PROFILE'"; exit 1 ;;
-          esac
-          for f in $(echo "$files" | tr ' ' '\n' | sed 's/-var-file=//'); do
-            [ -f "$f" ] || { echo "::error::missing var-file $f"; exit 1; }
-          done
-          echo "var_files=$files" >> "$GITHUB_OUTPUT"
-          echo "### Plan for profile \`$PROFILE\` ($files)" >> "$GITHUB_STEP_SUMMARY"
-
-          # HyperPod cold-start override. 'default' keeps the tfvars value; a
-          # -var wins over -var-file, so this cleanly forces the two-phase
-          # bring-up (false first, true once the deps chart is healthy) from CI.
+          echo "### Apply for env \`${{ github.event.inputs.environment || 'dev' }}\` (infra → cluster)" >> "$GITHUB_STEP_SUMMARY"
+          # 'default' keeps the layer's input value; a -var wins over Terragrunt
+          # inputs (TF_VAR_*), so this cleanly forces the two-phase bring-up.
           HP="${{ github.event.inputs.enable_hyperpod || 'default' }}"
           extra=""
           if [ "$HP" != "default" ]; then
@@ -95,50 +79,53 @@ jobs:
           terraform_version: "${{ env.TF_VERSION }}"
           terraform_wrapper: false
 
-      - name: Init
-        run: terraform init -input=false
+      - name: Setup Terragrunt
+        uses: ./.github/actions/setup-terragrunt
 
+      - name: Init
+        run: terragrunt init -input=false
+
+      # -out writes an ABSOLUTE path so the plan lands in the live dir (terragrunt
+      # otherwise writes it inside .terragrunt-cache). That known path is what the
+      # OPA gate, the run summary, and the upload/apply all consume.
       - name: Plan
-        run: terraform plan ${{ steps.profile.outputs.var_files }} ${{ steps.profile.outputs.extra_vars }} -input=false -lock-timeout=120s -out=tfplan
+        run: terragrunt plan ${{ steps.profile.outputs.extra_vars }} -input=false -lock-timeout=120s -out="$GITHUB_WORKSPACE/$INFRA_DIR/tfplan"
 
       # Gate the frozen plan BEFORE it is uploaded for the human approval — the
       # same OPA/Conftest policies as the PR plan, on the exact plan that applies.
-      # A `deny` fails here, so a violating plan never reaches the apply job.
       - name: Policy (OPA / Conftest)
         uses: ./.github/actions/opa-policy
         with:
-          working-directory: terraform/infra
-          plan-file: tfplan
+          working-directory: ${{ env.INFRA_DIR }}
+          plan-file: ${{ github.workspace }}/${{ env.INFRA_DIR }}/tfplan
+          tool: terragrunt
 
       - name: Plan to run summary
         run: |
           {
             echo '```'
-            terraform show -no-color tfplan
+            terragrunt show -no-color "$GITHUB_WORKSPACE/$INFRA_DIR/tfplan"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # tfplan may contain sensitive values in plaintext — keep it briefly and
-      # only for this run's apply job.
+      # tfplan may contain sensitive values in plaintext — keep it briefly.
       - name: Upload plan
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
-          path: terraform/infra/tfplan
+          path: ${{ env.INFRA_DIR }}/tfplan
           retention-days: 1
           if-no-files-found: error
 
   # 2) Apply the exact frozen plan. Gated by the GitHub Environment (required
-  #    reviewer per env, e.g. prod) — the reviewer approves AFTER seeing the plan
-  #    in job 1's summary, so what's approved is exactly what applies. If state
-  #    drifted out-of-band, `apply tfplan` fails on a stale plan (safe).
+  #    reviewer per env). If state drifted, `apply tfplan` fails on a stale plan.
   apply:
     needs: plan
     runs-on: ubuntu-latest # infra is AWS-API only — no self-hosted/VPN runner needed
     environment: ${{ github.event.inputs.environment || 'dev' }}
     defaults:
       run:
-        working-directory: terraform/infra
+        working-directory: terraform/live/${{ github.event.inputs.environment || 'dev' }}/infra
     steps:
       - uses: actions/checkout@v4
 
@@ -146,7 +133,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: tfplan
-          path: terraform/infra
+          path: ${{ env.INFRA_DIR }}
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -157,46 +144,34 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "${{ env.TF_VERSION }}"
-          # Self-hosted runner has no system `node` on PATH; the default wrapper
-          # is a node shim around `terraform` and fails every run step with
-          # `env: node: No such file or directory`. We don't consume the wrapper's
-          # step outputs, so disable it.
           terraform_wrapper: false
 
-      - name: Init
-        run: terraform init -input=false
+      - name: Setup Terragrunt
+        uses: ./.github/actions/setup-terragrunt
 
-      # Saved plan: vars are baked in (no -var-file), and it applies without an
-      # extra approval. GitOps is not written back — ArgoCD picks the env overlay
-      # from the cluster's `environment` label (stamped from var.environment).
+      - name: Init
+        run: terragrunt init -input=false
+
+      # Saved plan: inputs are baked in. The plan file is passed by ABSOLUTE path —
+      # terragrunt runs `terraform apply` inside .terragrunt-cache, so a relative
+      # name in the live dir would not resolve.
       - name: Apply
-        run: terraform apply -input=false -lock-timeout=120s tfplan
+        run: terragrunt apply -input=false -lock-timeout=120s "$GITHUB_WORKSPACE/$INFRA_DIR/tfplan"
 
   # 3) CLUSTER layer (kubernetes/helm/kubectl). MUST run after the infra apply —
-  #    its providers read the infra layer's fresh remote state. Not a saved plan:
-  #    the cluster plan depends on infra's just-applied outputs, so it plans+applies
-  #    here. Same env gate + least-privilege tf-apply role (ci-deployer group). The
+  #    its providers read the infra layer's fresh remote state. Not a saved plan.
+  #    Same env gate + least-privilege tf-apply role (ci-deployer group). The
   #    ONE-TIME escalation-capable bootstrap (ci-deployer RBAC + ArgoCD) is done by
-  #    the gated cluster-bootstrap.yml workflow (dispatch, cluster-admin role); after
-  #    that, this job reconciles forever. (Laptop fallback: bootstrap-cluster-access.sh.)
+  #    the gated cluster-bootstrap.yml workflow; after that this job reconciles.
   cluster_apply:
     needs: apply
     runs-on: [self-hosted, vpc] # ONLY layer that needs the VPN-locked K8s API
     environment: ${{ github.event.inputs.environment || 'dev' }}
     defaults:
       run:
-        working-directory: terraform/cluster
+        working-directory: terraform/live/${{ github.event.inputs.environment || 'dev' }}/cluster
     steps:
       - uses: actions/checkout@v4
-
-      - name: Resolve cluster tfvars (optional — defaults if absent)
-        id: profile
-        env:
-          PROFILE: ${{ github.event.inputs.environment || 'dev' }}
-        run: |
-          f="terraform.tfvars.${PROFILE}"
-          if [ -f "$f" ]; then echo "var_files=-var-file=$f" >> "$GITHUB_OUTPUT";
-          else echo "::notice::cluster: no $f (using defaults)"; echo "var_files=" >> "$GITHUB_OUTPUT"; fi
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -209,8 +184,11 @@ jobs:
           terraform_version: "${{ env.TF_VERSION }}"
           terraform_wrapper: false
 
+      - name: Setup Terragrunt
+        uses: ./.github/actions/setup-terragrunt
+
       - name: Init
-        run: terraform init -input=false
+        run: terragrunt init -input=false
 
       - name: Apply
-        run: terraform apply ${{ steps.profile.outputs.var_files }} -input=false -lock-timeout=120s -auto-approve
+        run: terragrunt apply -input=false -lock-timeout=120s -auto-approve

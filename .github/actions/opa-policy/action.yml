@@ -7,12 +7,19 @@ description: >
 
 inputs:
   working-directory:
-    description: "Layer dir containing the saved plan (e.g. terraform/infra)."
+    description: "Dir to run the show from (a live/<layer> unit when tool=terragrunt)."
     required: true
   plan-file:
-    description: "Saved binary plan filename inside working-directory."
+    description: >
+      Saved binary plan. With tool=terragrunt this should be an ABSOLUTE path
+      (terraform runs in the .terragrunt-cache dir, so a relative name there would
+      not resolve to the live dir)."
     required: false
     default: "tfplan"
+  tool:
+    description: "terraform | terragrunt. terragrunt forwards `show` into the cache dir."
+    required: false
+    default: "terraform"
   policy-dir:
     description: "Directory of .rego policies."
     required: false
@@ -56,9 +63,12 @@ runs:
       env:
         PLAN_FILE: ${{ inputs.plan-file }}
         POLICY_DIR: ${{ inputs.policy-dir }}
+        TOOL: ${{ inputs.tool }}
       run: |
         set -euo pipefail
-        terraform show -json "${PLAN_FILE}" > tfplan.json
+        # terragrunt forwards `show` into the .terragrunt-cache working dir where
+        # the providers live; PLAN_FILE is absolute so it resolves regardless.
+        "${TOOL}" show -json "${PLAN_FILE}" > tfplan.json
         # --namespace main: the policy/ dir also holds `docker` (and other)
         # packages whose rules don't apply to a tfplan; scope to the terraform
         # package so they aren't evaluated against the wrong input shape.

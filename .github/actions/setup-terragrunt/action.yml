@@ -1,0 +1,40 @@
+name: "Setup Terragrunt"
+description: >
+  Install a pinned + checksum-verified Terragrunt binary. CI runners get
+  `terraform` from hashicorp/setup-terraform but not `terragrunt`; this adds it.
+  Mirrors the opa-policy composite's pin-and-verify approach (no unpinned curl|sh).
+
+inputs:
+  version:
+    description: "Pinned Terragrunt release (matches the version validated locally)."
+    required: false
+    default: "1.1.0"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Terragrunt (pinned + checksum-verified)
+      shell: bash
+      env:
+        TG_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        # Skip if the pinned version is already present (self-hosted runner reuse).
+        if command -v terragrunt >/dev/null 2>&1 && \
+           terragrunt --version 2>/dev/null | grep -q "terragrunt version ${TG_VERSION}"; then
+          echo "terragrunt ${TG_VERSION} already present"; exit 0
+        fi
+        case "$(uname -s)" in Linux) os=linux;; Darwin) os=darwin;; *) echo "unsupported OS"; exit 1;; esac
+        case "$(uname -m)" in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; *) echo "unsupported arch"; exit 1;; esac
+        base="https://github.com/gruntwork-io/terragrunt/releases/download/v${TG_VERSION}"
+        bin="terragrunt_${os}_${arch}"
+        tmp="$(mktemp -d)"
+        curl -fsSL "${base}/${bin}"          -o "${tmp}/terragrunt"
+        curl -fsSL "${base}/SHA256SUMS"      -o "${tmp}/SHA256SUMS"
+        # Verify against the official SHA256SUMS manifest before installing.
+        ( cd "${tmp}" && grep " ${bin}\$" SHA256SUMS | sed "s/${bin}/terragrunt/" | sha256sum -c - )
+        chmod +x "${tmp}/terragrunt"
+        sudo install -m 0755 "${tmp}/terragrunt" /usr/local/bin/terragrunt 2>/dev/null \
+          || install -m 0755 "${tmp}/terragrunt" "${HOME}/.local/bin/terragrunt"
+        command -v terragrunt >/dev/null || echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+        terragrunt --version

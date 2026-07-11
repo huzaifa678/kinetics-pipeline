@@ -79,8 +79,7 @@ ENVIRONMENT=prod ../../scripts/setup-github-ci.sh
 # 1. Network layer (VPC/NAT/subnets) — tiny, AWS-API only, no VPN. The runner and
 #    infra layers both read it via remote_state. (bootstrap-cluster-access.sh and
 #    bootstrap-runner.sh also apply it defensively, so this is idempotent.)
-terraform -chdir=terraform/network init && \
-  terraform -chdir=terraform/network apply -var-file=terraform.tfvars.prod
+( cd terraform/live/prod/network && terragrunt init && terragrunt apply )
 
 # 2. Self-hosted CI runner (its own layer; reads the VPC from the NETWORK layer —
 #    NOT infra). No VPN. Seeds the PAT. Now the runner is up before infra/cluster.
@@ -97,16 +96,17 @@ RUNNER_PAT=… ENVIRONMENT=prod ./scripts/bootstrap-runner.sh
 #    (Laptop/VPN fallback if you skip the gated role: bootstrap-cluster-access.sh.)
 
 # 5. Once ArgoCD shows `hyperpod-dependencies` Synced+Healthy, bring HyperPod up
-#    (default enable_hyperpod=true) — the SageMaker cluster now creates cleanly.
-terraform -chdir=terraform/infra apply -var-file=terraform.tfvars.prod
+#    (the layer's input enable_hyperpod defaults to true) — SageMaker creates cleanly.
+( cd terraform/live/prod/infra && terragrunt apply )
 
 aws eks update-kubeconfig --region <region> --name <cluster>   # from infra outputs
 ```
 
 For a plain dev bring-up (public cluster, no VPN gymnastics) you can just apply the
-layers in order: `terraform -chdir=terraform/network apply -var-file=terraform.tfvars.dev`
-→ `terraform -chdir=terraform/infra apply -var-file=terraform.tfvars.dev` →
-`terraform -chdir=terraform/cluster apply`. **Steady state runs in CI**:
+layers in order via their Terragrunt units (values come from `inputs`, no -var-file):
+`( cd terraform/live/dev/network && terragrunt apply )` →
+`( cd terraform/live/dev/infra && terragrunt apply )` →
+`( cd terraform/live/dev/cluster && terragrunt apply )`. **Steady state runs in CI**:
 `terraform-apply` runs **infra (GitHub-hosted) → cluster (self-hosted VPC runner)`,
 the `cluster_apply` job `needs` the infra apply.
 

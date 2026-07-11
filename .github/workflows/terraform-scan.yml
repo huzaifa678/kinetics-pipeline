@@ -70,18 +70,22 @@ jobs:
         with:
           api-key: ${{ env.INFRACOST_API_KEY }}
 
+      # Infracost evaluates the prod Terragrunt unit directly (it detects the
+      # terragrunt.hcl and reads its inputs — no more --terraform-var-file), so
+      # terragrunt must be on PATH.
+      - name: Setup Terragrunt
+        uses: ./.github/actions/setup-terragrunt
+
       - name: Infracost baseline (target branch)
         run: |
           git checkout "${{ github.event.pull_request.base.ref }}"
-          infracost breakdown --path=terraform/infra \
-            --terraform-var-file=terraform.tfvars.prod \
+          infracost breakdown --path=terraform/live/prod/infra \
             --format=json --out-file=/tmp/infracost-base.json || echo "{}" > /tmp/infracost-base.json
           git checkout "${{ github.event.pull_request.head.sha }}"
 
       - name: Infracost diff (PR)
         run: |
-          infracost diff --path=terraform/infra \
-            --terraform-var-file=terraform.tfvars.prod \
+          infracost diff --path=terraform/live/prod/infra \
             --compare-to=/tmp/infracost-base.json \
             --format=json --out-file=/tmp/infracost.json
 
