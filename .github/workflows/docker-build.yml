@@ -7,6 +7,14 @@ on:
       - "training/**"
       - ".github/workflows/docker-build.yml"
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deploy env. prod runs the GitOps image-tag bump via update-gitops (CI-owned write). dev/push-to-main leave the bump to ArgoCD Image Updater."
+        type: choice
+        options:
+          - dev
+          - prod
+        default: dev
 
 permissions:
   id-token: write
@@ -100,3 +108,32 @@ jobs:
         with:
           sarif_file: trivy-${{ matrix.scope }}.sarif
           category: trivy-${{ matrix.scope }}
+
+  # For production deployment to ArgoCD use the github runner to bump the image tag
+  # instead of ArgoCD image Updater.
+  bump-training:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    needs: [tags, build]
+    uses: ./.github/workflows/update-gitops.yml
+    with:
+      image_tag: ${{ needs.tags.outputs.train_tag }}
+      values_path: helm/training-job/values.yaml
+    secrets: inherit
+
+  bump-inference:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    needs: [tags, bump-training]
+    uses: ./.github/workflows/update-gitops.yml
+    with:
+      image_tag: ${{ needs.tags.outputs.serve_tag }}
+      values_path: helm/inference-service/values.yaml
+    secrets: inherit
+
+  bump-seldon:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    needs: [tags, bump-inference]
+    uses: ./.github/workflows/update-gitops.yml
+    with:
+      image_tag: ${{ needs.tags.outputs.seldon_tag }}
+      values_path: gitops/config/seldon-experiment/values.yaml
+    secrets: inherit
