@@ -22,6 +22,10 @@ output "gha_cluster_bootstrap_role_arn" {
   value = module.cicd.cluster_bootstrap_role_arn
 }
 
+output "gha_gitops_contract_read_role_arn" {
+  value = module.cicd.gitops_contract_read_role_arn
+}
+
 output "github_oidc_provider_arn" {
   value = module.cicd.oidc_provider_arn
 }
