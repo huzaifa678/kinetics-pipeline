@@ -27,3 +27,8 @@ output "cluster_bootstrap_role_arn" {
   description = "Role ARN for cluster-bootstrap.yml (AWS_ROLE_CLUSTER_BOOTSTRAP). Gated to the protected environment; the ONLY principal granted a cluster-admin EKS access entry."
   value       = aws_iam_role.cluster_bootstrap.arn
 }
+
+output "gitops_contract_read_role_arn" {
+  description = "Role ARN for gitops-values.yml (AWS_ROLE_GITOPS_CONTRACT_READ). Read-only on /*/gitops-contract."
+  value       = aws_iam_role.gitops_contract_read.arn
+}

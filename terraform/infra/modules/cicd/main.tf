@@ -287,3 +287,33 @@ resource "aws_iam_role_policy_attachment" "cluster_bootstrap_apply" {
 
 data "aws_partition" "current" {}
 data "aws_caller_identity" "current" {}
+
+# ===========================================================================
+# GitOps contract reader. The gitops-values workflow assumes this to read the
+# SSM parameter Terraform publishes (/<project>/<env>/gitops-contract) and render
+# the CD repo's generated values. Read-only, and only that parameter path -- it
+# can touch nothing else. dev and prod are separate ACCOUNTS, so the
+# `*/gitops-contract` scope resolves to this account's single contract.
+# assume_main trust: assumable from a main-branch run (push / dispatch / schedule
+# / the workflow_call from terraform-apply), never a PR.
+# ===========================================================================
+resource "aws_iam_role" "gitops_contract_read" {
+  name               = "${var.name}-gha-gitops-contract-read"
+  assume_role_policy = data.aws_iam_policy_document.assume_main.json
+  tags               = var.tags
+}
+
+data "aws_iam_policy_document" "gitops_contract_read" {
+  statement {
+    sid       = "ReadGitopsContract"
+    effect    = "Allow"
+    actions   = ["ssm:GetParameter"]
+    resources = ["arn:${data.aws_partition.current.partition}:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/*/gitops-contract"]
+  }
+}
+
+resource "aws_iam_role_policy" "gitops_contract_read" {
+  name   = "${var.name}-gha-gitops-contract-read"
+  role   = aws_iam_role.gitops_contract_read.id
+  policy = data.aws_iam_policy_document.gitops_contract_read.json
+}
