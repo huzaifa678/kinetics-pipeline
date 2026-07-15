@@ -1,0 +1,95 @@
+name: gitops-values
+
+# This workflow replaces scripts/sync-gitops-values.sh (which read `terraform output` and
+# mutated hand-authored values files in place). The change now lands as a
+# reviewed PR that ArgoCD then pulls. Git stays the source of truth. Secrets
+# are NOT touched here; they flow via External Secrets -> Secrets Manager.
+
+on:
+  # Pull-based: terraform-apply calls this after a successful infra apply.
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+  # Manual re-render.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment whose contract to render"
+        required: true
+        type: choice
+        options: [dev, prod]
+  # Safety net: reconcile drift even if an apply forgot to call us.
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # dispatch/workflow_call render one env; the scheduled run does both.
+        environment: ${{ github.event_name == 'schedule' && fromJSON('["dev","prod"]') || fromJSON(format('["{0}"]', inputs.environment || 'dev')) }}
+    steps:
+      - name: Mint GitHub App token for the GitOps repo
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GITOPS_APP_ID }}
+          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ vars.GITOPS_REPO_NAME }}
+
+      - name: Checkout this repo (for the render script)
+        uses: actions/checkout@v4
+        with:
+          path: pipeline
+
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ vars.GITOPS_REPO_NAME }}
+          token: ${{ steps.app-token.outputs.token }}
+          path: gitops
+
+      - name: Configure AWS credentials (read the contract)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Role needs only ssm:GetParameter on /kinetics-pipeline/*/gitops-contract.
+          role-to-assume: ${{ vars.AWS_ROLE_GITOPS_CONTRACT_READ }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Fetch the contract from SSM
+        run: |
+          aws ssm get-parameter \
+            --name "/kinetics-pipeline/${{ matrix.environment }}/gitops-contract" \
+            --query Parameter.Value --output text > "${RUNNER_TEMP}/contract.json"
+
+      - name: Render generated values
+        working-directory: gitops
+        run: |
+          python3 "${GITHUB_WORKSPACE}/pipeline/scripts/render-generated-values.py" \
+            --env "${{ matrix.environment }}" \
+            --contract "${RUNNER_TEMP}/contract.json"
+
+      - name: Open PR with the rendered values
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          path: gitops
+          add-paths: gitops/environments/*/values/generated/**
+          branch: gitops/values-${{ matrix.environment }}
+          delete-branch: true
+          commit-message: "chore(${{ matrix.environment }}): sync generated values from terraform contract"
+          title: "chore(${{ matrix.environment }}): sync generated values"
+          body: |
+            Rendered by `scripts/render-generated-values.py` from
+            `/kinetics-pipeline/${{ matrix.environment }}/gitops-contract`.
+
+            Non-secret identifiers only (buckets, MLflow, AMP, inference edge).
+            Secrets are unaffected -- they flow via External Secrets.
