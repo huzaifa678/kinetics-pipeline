@@ -34,7 +34,17 @@ runs:
         # Verify against the official SHA256SUMS manifest before installing.
         ( cd "${tmp}" && grep " ${bin}\$" SHA256SUMS | sed "s/${bin}/terragrunt/" | sha256sum -c - )
         chmod +x "${tmp}/terragrunt"
+        # Prefer a system path; fall back to a user path (the self-hosted VPC
+        # runner has no passwordless sudo). Create the fallback dir first --
+        # ${HOME}/.local/bin does not exist by default, so `install` to it fails.
+        mkdir -p "${HOME}/.local/bin"
         sudo install -m 0755 "${tmp}/terragrunt" /usr/local/bin/terragrunt 2>/dev/null \
           || install -m 0755 "${tmp}/terragrunt" "${HOME}/.local/bin/terragrunt"
-        command -v terragrunt >/dev/null || echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
-        terragrunt --version
+        # $GITHUB_PATH only affects *later* steps, so verify via an explicit
+        # path in this step when we used the user-local fallback.
+        if command -v terragrunt >/dev/null 2>&1; then
+          terragrunt --version
+        else
+          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+          "${HOME}/.local/bin/terragrunt" --version
+        fi

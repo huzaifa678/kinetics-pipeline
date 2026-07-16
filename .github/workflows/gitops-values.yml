@@ -44,11 +44,11 @@ jobs:
           private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ vars.GITOPS_REPO_NAME }}
-
-      - name: Checkout this repo (for the render script)
-        uses: actions/checkout@v4
-        with:
-          path: pipeline
+          # Scope the token explicitly. If the App/installation lacks either,
+          # this step fails loudly at mint time instead of handing the PR step
+          # an under-scoped token (the "Resource not accessible" 403).
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Checkout GitOps repo
         uses: actions/checkout@v4
@@ -73,7 +73,7 @@ jobs:
       - name: Render generated values
         working-directory: gitops
         run: |
-          python3 "${GITHUB_WORKSPACE}/pipeline/scripts/render-generated-values.py" \
+          python3 scripts/render-generated-values.py \
             --env "${{ matrix.environment }}" \
             --contract "${RUNNER_TEMP}/contract.json"
 
