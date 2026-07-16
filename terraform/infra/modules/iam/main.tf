@@ -653,6 +653,24 @@ data "aws_iam_policy_document" "external_secrets" {
       "arn:${local.partition}:secretsmanager:${local.region}:${local.account_id}:secret:AmazonMSK_*",
     ]
   }
+
+  # The MSK SCRAM secret (AmazonMSK_*) is encrypted with a customer-managed CMK
+  # (MSK requires a CMK for SCRAM secrets, not the default aws/secretsmanager key).
+  # Without kms:Decrypt, GetSecretValue fails with "Access to KMS is not allowed",
+  # so ESO can never sync seldon-kafka-sasl. Scope the grant to decrypts performed
+  # *on behalf of* Secrets Manager (ViaService) rather than a raw key wildcard.
+  statement {
+    sid       = "DecryptSecretsViaSecretsManager"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = ["arn:${local.partition}:kms:${local.region}:${local.account_id}:key/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${local.region}.amazonaws.com"]
+    }
+  }
 }
 
 resource "aws_iam_role" "external_secrets" {
