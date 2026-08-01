@@ -4,23 +4,21 @@ ENVIRONMENT="${ENVIRONMENT:-prod}"
 PROJECT="${PROJECT:-kinetics-pipeline}"
 REGION="${REGION:-us-east-1}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-NETWORK="$ROOT/terraform/network"
-TF="$ROOT/terraform/runner"
+# Per-env Terragrunt units (values come from inputs — no tfvars/-var-file).
+NET_LIVE="$ROOT/terraform/live/${ENVIRONMENT}/network"
+RUNNER_LIVE="$ROOT/terraform/live/${ENVIRONMENT}/runner"
 NAME="${PROJECT}-${ENVIRONMENT}"
 SECRET_ID="${NAME}-gha-runner-pat"
 ASG="${NAME}-gha-runner"
-VARFILE="terraform.tfvars.${ENVIRONMENT}"
 
 : "${RUNNER_PAT:?set RUNNER_PAT to a GitHub token with repo Administration read/write}"
 
 echo "==> 1/4 ensure the NETWORK layer (vpc) exists — the runner reads it"
-nvar=""; [ -f "$NETWORK/$VARFILE" ] && nvar="-var-file=$VARFILE"
-terraform -chdir="$NETWORK" init -input=false >/dev/null
-terraform -chdir="$NETWORK" apply -auto-approve -input=false $nvar
+# Env is selected by directory (live/${ENVIRONMENT}); values come from inputs.
+( cd "$NET_LIVE" && terragrunt init -input=false >/dev/null && terragrunt apply -auto-approve -input=false )
 
 echo "==> 2/4 apply the runner layer (name/vpc from the network remote_state)"
-terraform -chdir="$TF" init -input=false >/dev/null
-terraform -chdir="$TF" apply -auto-approve -input=false
+( cd "$RUNNER_LIVE" && terragrunt init -input=false >/dev/null && terragrunt apply -auto-approve -input=false )
 
 echo "==> 3/4 store the PAT in Secrets Manager ($SECRET_ID)"
 aws secretsmanager put-secret-value --region "$REGION" \

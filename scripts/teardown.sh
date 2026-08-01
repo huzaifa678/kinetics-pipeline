@@ -2,24 +2,28 @@
 
 set -euo pipefail
 
+# Env selected by directory: live/${ENVIRONMENT}/<layer>. Values come from
+# Terragrunt inputs (no tfvars/-var-file). Defaults to dev.
+ENVIRONMENT="${ENVIRONMENT:-dev}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TF_DIR="$ROOT/terraform/infra"
-CLUSTER_DIR="$ROOT/terraform/cluster"
-RUNNER_DIR="$ROOT/terraform/runner"
-NETWORK_DIR="$ROOT/terraform/network"
-VAR_FILE="${VAR_FILE:-terraform.tfvars.dev}"
+LIVE="$ROOT/terraform/live/${ENVIRONMENT}"
+INFRA_LIVE="$LIVE/infra"
+CLUSTER_LIVE="$LIVE/cluster"
+RUNNER_LIVE="$LIVE/runner"
+NETWORK_LIVE="$LIVE/network"
 ECR_REPO_NAME="${ECR_REPO_NAME:-kinetics-training}"
-tf() { terraform -chdir="$TF_DIR" "$@"; }
-tfc() { terraform -chdir="$CLUSTER_DIR" "$@"; }
-tfr() { terraform -chdir="$RUNNER_DIR" "$@"; }
-tfn() { terraform -chdir="$NETWORK_DIR" "$@"; }
+tf() { ( cd "$INFRA_LIVE" && terragrunt "$@" ); }
+tfc() { ( cd "$CLUSTER_LIVE" && terragrunt "$@" ); }
+tfr() { ( cd "$RUNNER_LIVE" && terragrunt "$@" ); }
+tfn() { ( cd "$NETWORK_LIVE" && terragrunt "$@" ); }
 
-command -v terraform >/dev/null || { echo "terraform required"; exit 1; }
-command -v aws       >/dev/null || { echo "aws CLI required"; exit 1; }
-command -v python3   >/dev/null || { echo "python3 required"; exit 1; }
-[ -f "$TF_DIR/$VAR_FILE" ] || { echo "missing $TF_DIR/$VAR_FILE"; exit 1; }
+command -v terragrunt >/dev/null || { echo "terragrunt required"; exit 1; }
+command -v terraform  >/dev/null || { echo "terraform required"; exit 1; }
+command -v aws        >/dev/null || { echo "aws CLI required"; exit 1; }
+command -v python3    >/dev/null || { echo "python3 required"; exit 1; }
+[ -d "$INFRA_LIVE" ] || { echo "missing Terragrunt unit $INFRA_LIVE (unknown env '$ENVIRONMENT'?)"; exit 1; }
 
-echo "==> Teardown: $TF_DIR  (var-file: $VAR_FILE)"
+echo "==> Teardown: env '$ENVIRONMENT' ($INFRA_LIVE and sibling layers)"
 if [ "${AUTO_APPROVE:-0}" != "1" ]; then
   echo "    This EMPTIES all S3 buckets in state and DESTROYS the stack — irreversible."
   read -rp "    Type 'destroy' to continue: " ans
@@ -27,10 +31,8 @@ if [ "${AUTO_APPROVE:-0}" != "1" ]; then
 fi
 
 echo "==> [0/6] Destroy the CLUSTER layer first (in-cluster: argocd, RBAC, addons)"
-if [ -d "$CLUSTER_DIR" ]; then
-  cvar=""
-  [ -f "$CLUSTER_DIR/$VAR_FILE" ] && cvar="-var-file=$VAR_FILE"
-  tfc destroy $cvar -auto-approve || {
+if [ -d "$CLUSTER_LIVE" ]; then
+  tfc destroy -auto-approve || {
     echo "    cluster destroy failed (on the VPN? cluster already gone?)."
     echo "    If the layer is empty/irrelevant, continue; otherwise fix and re-run."
   }
@@ -53,6 +55,7 @@ else
 fi
 
 echo "==> [2/6] Emptying S3 buckets"
+tf init -input=false >/dev/null 2>&1 || true
 buckets="$(tf state pull | python3 -c '
 import sys, json
 s = json.load(sys.stdin)
@@ -93,27 +96,23 @@ if tf state list 2>/dev/null | grep -q '^module\.ecr\.aws_ecr_repository\.traini
   tf state rm module.ecr.aws_ecr_repository.training >/dev/null
 fi
 
-echo "==> [4/6] terraform destroy (INFRA layer: eks, iam, hyperpod, msk, ...)"
-tf destroy -var-file="$VAR_FILE" -auto-approve
+echo "==> [4/6] terragrunt destroy (INFRA layer: eks, iam, hyperpod, msk, ...)"
+tf destroy -auto-approve
 
 echo "==> [5/6] Destroy the RUNNER layer (its ASG/ENIs sit in the network subnets,"
 echo "          so it must go before the network destroy)"
-if [ -d "$RUNNER_DIR" ]; then
-  rvar=""
-  [ -f "$RUNNER_DIR/$VAR_FILE" ] && rvar="-var-file=$VAR_FILE"
+if [ -d "$RUNNER_LIVE" ]; then
   tfr init -input=false >/dev/null 2>&1 || true
-  tfr destroy $rvar -auto-approve || {
+  tfr destroy -auto-approve || {
     echo "    runner destroy failed (layer empty/never applied?). Continuing."
   }
 fi
 
 echo "==> [6/6] Destroy the NETWORK layer (vpc/nat/subnets) LAST"
-# The VPC lives in its own layer now (terraform/network); infra + runner both
-# read it via remote_state, so it's destroyed after both are gone.
-nvar=""
-[ -f "$NETWORK_DIR/$VAR_FILE" ] && nvar="-var-file=$VAR_FILE"
+# The VPC lives in its own layer (terraform/network); infra + runner both read it
+# via remote_state, so it's destroyed after both are gone.
 tfn init -input=false >/dev/null 2>&1 || true
-tfn destroy $nvar -auto-approve
+tfn destroy -auto-approve
 
 echo "==> Done."
 [ "${DELETE_ECR:-0}" = "1" ] || echo "    Note: ECR repo '$ECR_REPO_NAME' was left intact in AWS (run with DELETE_ECR=1 to remove)."

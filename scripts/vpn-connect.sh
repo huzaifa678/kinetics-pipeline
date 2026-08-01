@@ -2,10 +2,13 @@
 set -euo pipefail
 
 REGION="${REGION:-us-east-1}"
-TFDIR="$(cd "$(dirname "$0")/../terraform/infra" && pwd)"
-# Cluster name = <project>-<environment>; resolve from terraform output so it
-# tracks whatever was applied (dev/test/...), falling back to the dev default.
-CLUSTER="${CLUSTER:-$(terraform -chdir="$TFDIR" output -raw eks_cluster_name 2>/dev/null || echo kinetics-pipeline-dev)}"
+ENVIRONMENT="${ENVIRONMENT:-prod}"
+# Infra outputs now come from the Terragrunt unit (backend is generated there).
+TFDIR="$(cd "$(dirname "$0")/../terraform/live/${ENVIRONMENT}/infra" && pwd)"
+tgout() { ( cd "$TFDIR" && terragrunt output -raw "$1" 2>/dev/null ); }
+# Cluster name = <project>-<environment>; resolve from the infra output so it
+# tracks whatever was applied, falling back to the <project>-<env> default.
+CLUSTER="${CLUSTER:-$(tgout eks_cluster_name || echo "kinetics-pipeline-${ENVIRONMENT}")}"
 OVPN_OUT="${OVPN_OUT:-$HOME/Desktop/kinetics-vpn.ovpn}"
 MODE="${1:-connect}"
 
@@ -34,8 +37,8 @@ if [ "${MODE}" = "--dns-down" ]; then
   exit 0
 fi
 
-# 1. Resolve the Client VPN endpoint id (terraform output first, then AWS lookup).
-EP="$(terraform -chdir="$TFDIR" output -raw client_vpn_endpoint_id 2>/dev/null || true)"
+# 1. Resolve the Client VPN endpoint id (terragrunt output first, then AWS lookup).
+EP="$(tgout client_vpn_endpoint_id || true)"
 if [ -z "$EP" ] || [ "$EP" = "null" ]; then
   EP="$(aws ec2 describe-client-vpn-endpoints --region "$REGION" \
         --query 'ClientVpnEndpoints[?Status.Code==`available`].ClientVpnEndpointId | [0]' \
@@ -44,7 +47,7 @@ fi
 if [ -z "$EP" ] || [ "$EP" = "None" ]; then
   echo "No available Client VPN endpoint found in $REGION." >&2
   echo "Deploy it first:" >&2
-  echo "  terraform -chdir=$TFDIR apply -var-file=terraform.tfvars.dev  # infra layer creates the VPN" >&2
+  echo "  ( cd $TFDIR && terragrunt apply )  # infra layer creates the VPN" >&2
   exit 1
 fi
 echo "Client VPN endpoint: $EP"
