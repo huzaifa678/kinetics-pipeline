@@ -23,4 +23,6 @@ inputs = merge(local.env.inputs, {
 
   gitops_repo_url      = "https://github.com/huzaifa678/Kinetics-Continious-Delivery.git"
   gitops_repo_revision = "main"
+
+  argocd_hostname = "argocd.freeeasycrypto.com"
 })

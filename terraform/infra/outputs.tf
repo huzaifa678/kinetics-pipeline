@@ -59,10 +59,12 @@ output "ack_sagemaker_role_arn" { value = module.iam.ack_sagemaker_role_arn }
 output "karpenter_role_arn" { value = module.iam.karpenter_role_arn }
 output "external_secrets_role_arn" { value = module.iam.external_secrets_role_arn }
 output "keda_metrics_role_arn" { value = module.iam.keda_metrics_role_arn }
+output "thanos_role_arn" { value = module.iam.thanos_role_arn }
 output "etl_shards_role_arn" { value = module.iam.etl_shards_role_arn }
 output "image_updater_role_arn" { value = module.iam.image_updater_role_arn }
 output "aws_lbc_role_arn" { value = module.iam.aws_lbc_role_arn }
 output "external_dns_role_arn" { value = module.iam.external_dns_role_arn }
+output "cert_manager_role_arn" { value = module.iam.cert_manager_role_arn }
 output "amp_remote_write_role_arn" { value = module.iam.amp_remote_write_role_arn }
 output "otel_xray_role_arn" { value = module.iam.otel_xray_role_arn }
 
@@ -70,6 +72,7 @@ output "otel_xray_role_arn" { value = module.iam.otel_xray_role_arn }
 # associations in the cluster layer — output so the two layers can't drift.
 output "enable_aws_lb_controller" { value = var.enable_aws_lb_controller }
 output "enable_external_dns" { value = var.enable_external_dns }
+output "enable_cert_manager_dns01" { value = var.enable_cert_manager_dns01 }
 output "enable_managed_prometheus" { value = var.enable_managed_prometheus }
 output "enable_xray_tracing" { value = var.enable_xray_tracing }
 

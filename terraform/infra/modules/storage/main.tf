@@ -51,7 +51,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
   }
 }
 
-
 resource "aws_s3_bucket" "checkpoints" {
   bucket = "${var.name}-checkpoints-${local.suffix}"
   tags   = var.tags
@@ -166,4 +165,109 @@ resource "aws_fsx_lustre_file_system" "this" {
   auto_import_policy = "NEW_CHANGED"
 
   tags = merge(var.tags, { Name = "${var.name}-fsx" })
+}
+
+resource "aws_s3_bucket" "loki" {
+
+  bucket = "${var.name}-loki-${local.suffix}"
+  tags   = var.tags
+}
+
+resource "aws_s3_bucket_versioning" "loki" {
+  bucket = aws_s3_bucket.loki.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "loki" {
+  bucket = aws_s3_bucket.loki.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "loki" {
+  bucket                  = aws_s3_bucket.loki.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket" "tempo" {
+
+  bucket = "${var.name}-tempo-${local.suffix}"
+  tags   = var.tags
+}
+
+
+resource "aws_s3_bucket_versioning" "tempo" {
+
+  bucket = aws_s3_bucket.tempo.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "tempo" {
+
+  bucket = aws_s3_bucket.tempo.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+
+resource "aws_s3_bucket_public_access_block" "tempo" {
+
+  bucket = aws_s3_bucket.tempo.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket" "thanos" {
+
+  bucket = "${var.name}-thanos-${local.suffix}"
+  tags   = var.tags
+}
+
+
+resource "aws_s3_bucket_versioning" "thanos" {
+
+  bucket = aws_s3_bucket.thanos.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "thanos" {
+
+  bucket = aws_s3_bucket.thanos.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+
+resource "aws_s3_bucket_public_access_block" "thanos" {
+
+  bucket                  = aws_s3_bucket.thanos.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }

@@ -13,6 +13,11 @@ output "hyperpod_autoscaler_role_arn" {
   value       = aws_iam_role.hyperpod_autoscaler.arn
 }
 
+output "thanos_role_arn" {
+  description = "Pod Identity role ARN for Thanos."
+  value       = aws_iam_role.thanos.arn
+}
+
 output "ack_sagemaker_role_arn" {
   description = "Pod Identity role ARN for the ACK SageMaker controller."
   value       = aws_iam_role.ack_sagemaker.arn
@@ -71,4 +76,9 @@ output "aws_lbc_role_arn" {
 output "external_dns_role_arn" {
   description = "Pod Identity role ARN for external-dns (empty when off)."
   value       = var.enable_external_dns ? aws_iam_role.external_dns[0].arn : ""
+}
+
+output "cert_manager_role_arn" {
+  description = "Pod Identity role ARN for the cert-manager Route53 DNS-01 solver (empty when off)."
+  value       = var.enable_cert_manager_dns01 ? aws_iam_role.cert_manager[0].arn : ""
 }

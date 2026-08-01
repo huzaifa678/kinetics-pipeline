@@ -433,6 +433,12 @@ variable "enable_external_dns" {
   default     = false
 }
 
+variable "enable_cert_manager_dns01" {
+  description = "Create the cert-manager Pod Identity role for the Route53 ACME DNS-01 solver (used by the ingress-nginx + Let's Encrypt ClusterIssuer securing the ArgoCD UI). Scoped to the resolved core zone."
+  type        = bool
+  default     = false
+}
+
 variable "inference_domain_name" {
   description = "FQDN for the inference endpoint (e.g. inference.example.com). Empty = no ACM cert / DNS record is created."
   type        = string

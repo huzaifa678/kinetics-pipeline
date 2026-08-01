@@ -55,3 +55,9 @@ variable "external_dns_chart_version" {
   type        = string
   default     = "1.15.2"
 }
+
+variable "argocd_hostname" {
+  description = "FQDN to serve the ArgoCD UI at via an internal ingress-nginx Ingress + cert-manager TLS (e.g. argocd.<domain>). Empty = no Ingress (kubectl port-forward only)."
+  type        = string
+  default     = ""
+}

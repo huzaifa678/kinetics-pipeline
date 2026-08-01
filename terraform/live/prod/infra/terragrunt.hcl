@@ -18,7 +18,7 @@ dependency "network" {
 inputs = merge(local.env.inputs, {
   kubernetes_version        = "1.34"
   system_node_instance_type = "m6i.large"
-  system_node_desired_size  = 3 
+  system_node_desired_size  = 3
 
   cluster_admin_principal_arns = [
     "arn:aws:iam::533267178572:user/terraform",
@@ -76,9 +76,10 @@ inputs = merge(local.env.inputs, {
 
   enable_aws_lb_controller  = true
   enable_external_dns       = true
-  core_domain_name          = "freeeasycrypto.com" 
+  enable_cert_manager_dns01 = true
+  core_domain_name          = "freeeasycrypto.com"
   inference_domain_name     = ""
-  inference_route53_zone_id = "" 
+  inference_route53_zone_id = ""
 
   enable_managed_prometheus = true
   enable_managed_grafana    = true
@@ -87,10 +88,10 @@ inputs = merge(local.env.inputs, {
   enable_cognito           = true
   enable_frontend          = true
   enable_waf               = true
-  frontend_domain_name     = ""                       
-  api_domain_name          = "api.freeeasycrypto.com" 
+  frontend_domain_name     = ""
+  api_domain_name          = "api.freeeasycrypto.com"
   frontend_route53_zone_id = ""
-  cognito_hosted_ui_prefix = "kinetics-prod-auth" 
+  cognito_hosted_ui_prefix = "kinetics-prod-auth"
 
   github_oidc_provider_arn = "arn:aws:iam::533267178572:oidc-provider/token.actions.githubusercontent.com"
 })

@@ -75,6 +75,27 @@ resource "aws_eks_pod_identity_association" "external_dns" {
   tags            = var.tags
 }
 
+# cert-manager SA -> Route53 role (Pod Identity) for the ACME DNS-01 solver that
+# issues the ArgoCD-UI cert. SA is the controller SA created by the GitOps
+# cert-manager chart (ns/SA cert-manager/cert-manager).
+resource "aws_eks_pod_identity_association" "cert_manager" {
+  count = var.enable_cert_manager_dns01 ? 1 : 0
+
+  cluster_name    = var.cluster_name
+  namespace       = "cert-manager"
+  service_account = "cert-manager"
+  role_arn        = var.cert_manager_role_arn
+  tags            = var.tags
+}
+
+resource "aws_eks_pod_identity_association" "thanos" {
+  cluster_name    = var.cluster_name
+  namespace       = "thanos"
+  service_account = "thanos"
+  role_arn        = var.thanos_role_arn
+  tags            = var.tags
+}
+
 resource "aws_eks_pod_identity_association" "amp_remote_write" {
   count = var.enable_managed_prometheus ? 1 : 0
 
@@ -107,13 +128,11 @@ resource "helm_release" "argocd" {
   chart            = "argo-cd"
   version          = var.argocd_version
 
-  # Custom health assessment for the HyperPodPyTorchJob CRD. ArgoCD ships no
-  # built-in health check for it, so without this the manual-sync training app
-  # sits "Progressing/Unknown" forever and never surfaces Succeeded/Failed. This
-  # maps the operator's Kubeflow-style status.conditions to ArgoCD health, via
-  # the chart's configs.cm (merged into the argocd-cm ConfigMap).
   values = [yamlencode({
     configs = {
+      params = {
+        "server.insecure" = var.argocd_hostname != ""
+      }
       cm = {
         "resource.customizations.health.sagemaker.amazonaws.com_HyperPodPyTorchJob" = <<-EOT
           hs = {}
@@ -150,6 +169,22 @@ resource "helm_release" "argocd" {
         name  = "ARGOCD_GIT_MODULES_ENABLED"
         value = "false"
       }]
+    }
+    # Internal ingress-nginx Ingress + cert-manager TLS for the ArgoCD UI. Gated
+    # on argocd_hostname (empty -> no Ingress, port-forward only). The `nginx`
+    # IngressClass + the `letsencrypt-dns` ClusterIssuer are GitOps-owned
+    # (Kinetics-CD: gitops/infra/ingress-nginx + gitops/apps/cert-manager-issuers);
+    # external-dns registers the host to the internal NLB — VPN-only reachable.
+    server = {
+      ingress = {
+        enabled          = var.argocd_hostname != ""
+        ingressClassName = "nginx"
+        hostname         = var.argocd_hostname
+        annotations = {
+          "cert-manager.io/cluster-issuer" = "letsencrypt-dns"
+        }
+        tls = var.argocd_hostname != ""
+      }
     }
   })]
 }

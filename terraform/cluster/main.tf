@@ -32,6 +32,7 @@ module "addons" {
   keda_metrics_role_arn     = local.infra.keda_metrics_role_arn
   etl_shards_role_arn       = local.infra.etl_shards_role_arn
   image_updater_role_arn    = local.infra.image_updater_role_arn
+  thanos_role_arn           = local.infra.thanos_role_arn
 
   enable_argocd            = var.enable_argocd
   enable_hyperpod_operator = var.enable_hyperpod_operator
@@ -46,6 +47,9 @@ module "addons" {
   aws_lbc_role_arn           = local.infra.aws_lbc_role_arn
   external_dns_role_arn      = local.infra.external_dns_role_arn
   external_dns_domain_filter = local.infra.external_dns_domain_filter
+  enable_cert_manager_dns01  = local.infra.enable_cert_manager_dns01
+  cert_manager_role_arn      = local.infra.cert_manager_role_arn
+  argocd_hostname            = var.argocd_hostname
   amp_remote_write_role_arn  = local.infra.amp_remote_write_role_arn
   otel_xray_role_arn         = local.infra.otel_xray_role_arn
   enable_managed_prometheus  = local.infra.enable_managed_prometheus

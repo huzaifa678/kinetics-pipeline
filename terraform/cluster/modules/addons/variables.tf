@@ -36,6 +36,11 @@ variable "external_secrets_role_arn" {
   type        = string
 }
 
+variable "thanos_role_arn" {
+  description = "Pod Identity role ARN for Thanos."
+  type        = string
+}
+
 variable "keda_metrics_role_arn" {
   description = "Pod Identity role ARN for the KEDA metrics adapter"
   type        = string
@@ -141,6 +146,24 @@ variable "aws_lbc_role_arn" {
 
 variable "external_dns_role_arn" {
   description = "Pod Identity role ARN for external-dns."
+  type        = string
+  default     = ""
+}
+
+variable "enable_cert_manager_dns01" {
+  description = "Associate the cert-manager SA with the Route53 DNS-01 Pod Identity role (for the ArgoCD-UI Let's Encrypt ClusterIssuer)."
+  type        = bool
+  default     = false
+}
+
+variable "cert_manager_role_arn" {
+  description = "Pod Identity role ARN for the cert-manager Route53 DNS-01 solver."
+  type        = string
+  default     = ""
+}
+
+variable "argocd_hostname" {
+  description = "FQDN to serve the ArgoCD UI at via an internal ingress-nginx Ingress + cert-manager TLS. Empty = no Ingress (port-forward only)."
   type        = string
   default     = ""
 }

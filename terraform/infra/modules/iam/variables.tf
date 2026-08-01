@@ -18,6 +18,12 @@ variable "checkpoint_bucket_arn" {
   type        = string
 }
 
+variable "thanos_blocks_bucket_arn" {
+  description = "ARN of the S3 bucket used by Thanos to store TSDB blocks."
+  type        = string
+  default     = ""
+}
+
 variable "karpenter_interruption_queue_arn" {
   description = "ARN of the Karpenter SQS interruption queue."
   type        = string
@@ -55,6 +61,12 @@ variable "enable_aws_lb_controller" {
 
 variable "enable_external_dns" {
   description = "Create the external-dns Pod Identity role."
+  type        = bool
+  default     = false
+}
+
+variable "enable_cert_manager_dns01" {
+  description = "Create the cert-manager Pod Identity role (Route53 ACME DNS-01 solver). Known at plan time, so it gates count safely; reuses route53_zone_id for scoping."
   type        = bool
   default     = false
 }

@@ -158,6 +158,7 @@ module "iam" {
   cluster_name                     = module.eks.cluster_name
   data_bucket_arn                  = module.storage.data_bucket_arn
   checkpoint_bucket_arn            = module.storage.checkpoint_bucket_arn
+  thanos_blocks_bucket_arn         = module.storage.thanos_bucket_arn
   karpenter_interruption_queue_arn = module.karpenter.interruption_queue_arn
   ecr_repository_arn               = data.aws_ecr_repository.training.arn
 
@@ -167,6 +168,7 @@ module "iam" {
   enable_xray_tracing       = var.enable_xray_tracing
   enable_aws_lb_controller  = var.enable_aws_lb_controller
   enable_external_dns       = var.enable_external_dns
+  enable_cert_manager_dns01 = var.enable_cert_manager_dns01
   route53_zone_id           = local.inference_zone_id
 
   tags = local.common_tags

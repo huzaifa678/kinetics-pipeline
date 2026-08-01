@@ -17,6 +17,7 @@ locals {
 
     data_bucket                = module.storage.data_bucket_name
     checkpoint_bucket          = module.storage.checkpoint_bucket_name
+    thanos_bucket              = module.storage.thanos_bucket_name
     mlflow_artifact_bucket     = local._mlflow_bucket == null ? "" : local._mlflow_bucket
     mlflow_tracking_server_arn = local._mlflow_arn == null ? "" : local._mlflow_arn
 
