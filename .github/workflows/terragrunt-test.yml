@@ -1,0 +1,81 @@
+name: terragrunt-test
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - "policy/**"
+      - ".github/workflows/terragrunt-test.yml"
+      - ".github/actions/setup-terragrunt/**"
+      - ".github/actions/opa-policy/**"
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "policy/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.10.5"
+
+jobs:
+  # Tree-wide HCL formatting — one pass over terraform/, not per-unit.
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "${{ env.TF_VERSION }}"
+          terraform_wrapper: false
+      - name: Setup Terragrunt
+        uses: ./.github/actions/setup-terragrunt
+      - name: HCL fmt check
+        working-directory: terraform
+        run: terragrunt hcl fmt --check --diff
+
+  # Per-unit static checks across the full env × layer grid (8 units). No AWS
+  # creds: render mocks dependency outputs and hcl validate only copies the local
+  # module source, so nothing touches the S3 backend or the cloud API.
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [dev, prod]
+        layer: [network, infra, cluster, runner]
+    defaults:
+      run:
+        working-directory: terraform/live/${{ matrix.env }}/${{ matrix.layer }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "${{ env.TF_VERSION }}"
+          terraform_wrapper: false
+
+      - name: Setup Terragrunt
+        uses: ./.github/actions/setup-terragrunt
+
+      - name: HCL validate
+        run: terragrunt hcl validate
+
+      # Guards the TF_VAR_* silent-typo trap: an input whose name is not a declared
+      # variable would be dropped without error. Fails on unused/undeclared inputs.
+      - name: Validate inputs vs declared variables
+        run: terragrunt hcl validate --inputs
+
+      - name: Render unit config to JSON
+        run: terragrunt render --format json > render.json
+
+      - name: Policy gate (OPA / Conftest)
+        uses: ./.github/actions/opa-policy
+        with:
+          working-directory: terraform/live/${{ matrix.env }}/${{ matrix.layer }}
+          plan-file: ${{ github.workspace }}/terraform/live/${{ matrix.env }}/${{ matrix.layer }}/render.json
+          tool: json
+          namespace: terragrunt
