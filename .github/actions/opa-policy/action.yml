@@ -17,9 +17,19 @@ inputs:
     required: false
     default: "tfplan"
   tool:
-    description: "terraform | terragrunt. terragrunt forwards `show` into the cache dir."
+    description: >
+      terraform | terragrunt | json. terraform/terragrunt run `show -json` on a saved
+      binary plan (terragrunt forwards it into the cache dir). `json` skips the show
+      and treats plan-file as an already-JSON document (e.g. `terragrunt render
+      --format json`), so the same pinned Conftest gates non-plan inputs too.
     required: false
     default: "terraform"
+  namespace:
+    description: >
+      Conftest package namespace to evaluate (policy/ holds several: main for the
+      tfplan, terragrunt for rendered units, docker for Dockerfiles).
+    required: false
+    default: "main"
   policy-dir:
     description: "Directory of .rego policies."
     required: false
@@ -64,14 +74,21 @@ runs:
         PLAN_FILE: ${{ inputs.plan-file }}
         POLICY_DIR: ${{ inputs.policy-dir }}
         TOOL: ${{ inputs.tool }}
+        NAMESPACE: ${{ inputs.namespace }}
       run: |
         set -euo pipefail
-        # terragrunt forwards `show` into the .terragrunt-cache working dir where
-        # the providers live; PLAN_FILE is absolute so it resolves regardless.
-        "${TOOL}" show -json "${PLAN_FILE}" > tfplan.json
-        # --namespace main: the policy/ dir also holds `docker` (and other)
-        # packages whose rules don't apply to a tfplan; scope to the terraform
-        # package so they aren't evaluated against the wrong input shape.
+        if [ "${TOOL}" = "json" ]; then
+          # PLAN_FILE is already JSON (e.g. `terragrunt render --format json`) —
+          # no `show` step, just gate the document directly.
+          cp "${PLAN_FILE}" tfplan.json
+        else
+          # terragrunt forwards `show` into the .terragrunt-cache working dir where
+          # the providers live; PLAN_FILE is absolute so it resolves regardless.
+          "${TOOL}" show -json "${PLAN_FILE}" > tfplan.json
+        fi
+        # policy/ holds several packages (main for the tfplan, terragrunt for
+        # rendered units, docker for Dockerfiles) whose rules target different input
+        # shapes; scope to the one that matches this input so the others don't fire.
         conftest test tfplan.json \
           --policy "${GITHUB_WORKSPACE}/${POLICY_DIR}" \
-          --namespace main
+          --namespace "${NAMESPACE}"
