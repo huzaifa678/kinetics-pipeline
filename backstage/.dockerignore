@@ -1,9 +1,11 @@
 .git
 node_modules
 packages/*/node_modules
-packages/*/src
-!packages/backend/dist
-*.local.yaml
+packages/*/dist
+packages/*/dist-types
 dist-types
+tsconfig.tsbuildinfo
 .yarn/cache
 .yarn/install-state.gz
+*.local.yaml
+.env

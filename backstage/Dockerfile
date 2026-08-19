@@ -9,17 +9,19 @@ RUN apt-get update && \
 WORKDIR /app
 RUN corepack enable
 
-# Copy manifests first for a cacheable dependency install.
+# Copy manifests first for a cacheable dependency install. corepack + the
+# packageManager field in package.json provide yarn 4 — no .yarn/releases to copy.
 COPY .yarnrc.yml package.json yarn.lock backstage.json ./
-COPY .yarn ./.yarn
 COPY packages/app/package.json packages/app/package.json
 COPY packages/backend/package.json packages/backend/package.json
 
 RUN yarn install --immutable
 
-# Now the sources, and build the backend into dist/*.tar.gz.
+# Now the sources, and build EVERYTHING (app + backend). build:all compiles the
+# frontend app into packages/app/dist (served by app-backend) and bundles the
+# backend into packages/backend/dist/*.tar.gz.
 COPY . .
-RUN yarn tsc && yarn build:backend
+RUN yarn tsc && yarn build:all
 
 # --- stage 2: runtime ------------------------------------------------------
 FROM public.ecr.aws/docker/library/node:20-bookworm-slim
@@ -46,6 +48,9 @@ RUN tar xzf skeleton.tar.gz && rm skeleton.tar.gz && \
 
 COPY --chown=node:node --from=build /app/packages/backend/dist/bundle.tar.gz ./
 RUN tar xzf bundle.tar.gz && rm bundle.tar.gz
+
+# The compiled frontend, served by app-backend (resolves the `app` workspace).
+COPY --chown=node:node --from=build /app/packages/app/dist ./packages/app/dist
 
 # app-config.yaml is the base; app-config.production.yaml overlays prod.
 COPY --chown=node:node app-config.yaml app-config.production.yaml ./
