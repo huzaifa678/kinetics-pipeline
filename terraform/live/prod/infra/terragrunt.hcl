@@ -93,5 +93,11 @@ inputs = merge(local.env.inputs, {
   frontend_route53_zone_id = ""
   cognito_hosted_ui_prefix = "kinetics-prod-auth"
 
+  enable_backstage                 = true
+  backstage_hostname               = "backstage.freeeasycrypto.com"
+  backstage_db_instance_class      = "db.t4g.small"
+  backstage_db_multi_az            = false
+  backstage_db_deletion_protection = true
+
   github_oidc_provider_arn = "arn:aws:iam::533267178572:oidc-provider/token.actions.githubusercontent.com"
 })
