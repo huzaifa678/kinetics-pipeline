@@ -34,6 +34,17 @@ output "machine_client_secret" {
   sensitive   = true
 }
 
+output "backstage_client_id" {
+  description = "Backstage OIDC app-client ID (empty when no Backstage client)."
+  value       = one(aws_cognito_user_pool_client.backstage[*].id)
+}
+
+output "backstage_client_secret" {
+  description = "Backstage OIDC app-client secret. Sensitive."
+  value       = one(aws_cognito_user_pool_client.backstage[*].client_secret)
+  sensitive   = true
+}
+
 output "predict_scope" {
   description = "Fully-qualified scope for client-credentials token requests (inference/predict)."
   value       = aws_cognito_resource_server.inference.scope_identifiers[0]

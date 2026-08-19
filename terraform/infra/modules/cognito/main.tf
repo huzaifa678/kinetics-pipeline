@@ -71,6 +71,30 @@ resource "aws_cognito_user_pool_client" "spa" {
   prevent_user_existence_errors = "ENABLED"
 }
 
+# Backstage SSO — confidential OIDC client (authorization-code flow). Created
+# only when backstage_callback_urls is non-empty (i.e. a Backstage host is set).
+# Backstage's auth-backend OIDC provider exchanges the code at the token endpoint
+# using generate_secret, so this must be a confidential client.
+resource "aws_cognito_user_pool_client" "backstage" {
+  count        = length(var.backstage_callback_urls) > 0 ? 1 : 0
+  name         = "${var.name}-backstage"
+  user_pool_id = aws_cognito_user_pool.this.id
+
+  generate_secret = true
+
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_flows                  = ["code"]
+  allowed_oauth_scopes                 = ["openid", "email", "profile"]
+  supported_identity_providers         = ["COGNITO"]
+
+  callback_urls = var.backstage_callback_urls
+  logout_urls   = var.backstage_logout_urls
+
+  explicit_auth_flows = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+
+  prevent_user_existence_errors = "ENABLED"
+}
+
 # Confidential machine client — client-credentials, scoped to inference/predict.
 resource "aws_cognito_user_pool_client" "machine" {
   name         = "${var.name}-machine"
