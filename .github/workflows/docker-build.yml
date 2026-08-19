@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "training/**"
+      - "backstage/**"
       - ".github/workflows/docker-build.yml"
   workflow_dispatch:
     inputs:
@@ -36,18 +37,20 @@ jobs:
       train_tag: ${{ steps.meta.outputs.train_tag }}
       serve_tag: ${{ steps.meta.outputs.serve_tag }}
       seldon_tag: ${{ steps.meta.outputs.seldon_tag }}
+      backstage_tag: ${{ steps.meta.outputs.backstage_tag }}
     steps:
       - uses: actions/checkout@v4
       - name: Compute image tags
         id: meta
         run: |
           short=$(git rev-parse --short HEAD)
-          # Distinct prefixes: training (sha-), FastAPI edge (serve-) and the
-          # Seldon custom MLServer runtime (seldon-) share the ECR repo but never
-          # collide, so immutable-tag pushes stay safe.
+          # Distinct prefixes: training (sha-), FastAPI edge (serve-), the Seldon
+          # custom MLServer runtime (seldon-) and the Backstage portal (backstage-)
+          # share the ECR repo but never collide, so immutable-tag pushes stay safe.
           echo "train_tag=sha-$short" >> "$GITHUB_OUTPUT"
           echo "serve_tag=serve-$short" >> "$GITHUB_OUTPUT"
           echo "seldon_tag=seldon-$short" >> "$GITHUB_OUTPUT"
+          echo "backstage_tag=backstage-$short" >> "$GITHUB_OUTPUT"
 
   # Build + push all three images in parallel. They share the training/ context
   # (src/ + pyproject), so each rebuilds on any training/** change; the buildx
@@ -59,9 +62,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: training, file: training/Dockerfile, scope: training, tag: "${{ needs.tags.outputs.train_tag }}" }
-          - { name: serving, file: training/Dockerfile.serve, scope: serving, tag: "${{ needs.tags.outputs.serve_tag }}" }
-          - { name: seldon, file: training/Dockerfile.seldon, scope: seldon, tag: "${{ needs.tags.outputs.seldon_tag }}" }
+          - { name: training, context: training, file: training/Dockerfile, scope: training, tag: "${{ needs.tags.outputs.train_tag }}" }
+          - { name: serving, context: training, file: training/Dockerfile.serve, scope: serving, tag: "${{ needs.tags.outputs.serve_tag }}" }
+          - { name: seldon, context: training, file: training/Dockerfile.seldon, scope: seldon, tag: "${{ needs.tags.outputs.seldon_tag }}" }
+          - { name: backstage, context: backstage, file: backstage/Dockerfile, scope: backstage, tag: "${{ needs.tags.outputs.backstage_tag }}" }
     steps:
       - uses: actions/checkout@v4
 
@@ -80,7 +84,7 @@ jobs:
       - name: Build and push ${{ matrix.name }} image (linux/amd64)
         uses: docker/build-push-action@v6
         with:
-          context: training
+          context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           platforms: linux/amd64
           push: true
@@ -136,4 +140,15 @@ jobs:
     with:
       image_tag: ${{ needs.tags.outputs.seldon_tag }}
       values_path: gitops/config/seldon-experiment/values.yaml
+    secrets: inherit
+
+  # Backstage is CI-owned in prod like the model images (no Image Updater alias —
+  # the portal isn't a model workload). Bumps the CD chart's image.tag.
+  bump-backstage:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    needs: [tags, bump-seldon]
+    uses: ./.github/workflows/update-gitops.yml
+    with:
+      image_tag: ${{ needs.tags.outputs.backstage_tag }}
+      values_path: gitops/config/backstage/values.yaml
     secrets: inherit
