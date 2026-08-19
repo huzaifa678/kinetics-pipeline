@@ -509,6 +509,37 @@ variable "enable_frontend" {
   default     = false
 }
 
+# --- Backstage (developer portal / IDP) ------------------------------------
+variable "enable_backstage" {
+  description = "Provision the AWS-side Backstage deps: RDS Postgres + (with enable_cognito) a Cognito OIDC client. The portal itself is GitOps-deployed (Kinetics-CD)."
+  type        = bool
+  default     = false
+}
+
+variable "backstage_hostname" {
+  description = "FQDN the Backstage portal is served at (e.g. backstage.freeeasycrypto.com). Drives the Cognito OIDC callback/logout URLs. Empty => guest auth, no Cognito client."
+  type        = string
+  default     = ""
+}
+
+variable "backstage_db_instance_class" {
+  description = "RDS instance class for Backstage's Postgres."
+  type        = string
+  default     = "db.t4g.small"
+}
+
+variable "backstage_db_multi_az" {
+  description = "Multi-AZ standby for Backstage's Postgres (prod HA)."
+  type        = bool
+  default     = false
+}
+
+variable "backstage_db_deletion_protection" {
+  description = "Block terraform destroy of the Backstage DB."
+  type        = bool
+  default     = true
+}
+
 variable "enable_waf" {
   description = "Attach WAFv2 (managed common rules + rate limit) to the SPA CloudFront and the public inference ALB."
   type        = bool

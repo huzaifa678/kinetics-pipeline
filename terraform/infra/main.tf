@@ -26,6 +26,12 @@ locals {
   # same way, so the ACM cert + external-dns filter must track this effective host
   # (otherwise the prod ALB gets no matching cert and external-dns skips the record).
   inference_effective_host = var.api_domain_name != "" ? var.api_domain_name : var.inference_domain_name
+
+  # Backstage OIDC callback: the auth-backend OIDC handler frame path. Empty
+  # when no backstage host is set (dev uses guest auth, no Cognito client).
+  backstage_callback_urls = var.backstage_hostname != "" ? [
+    "https://${var.backstage_hostname}/api/auth/oidc/handler/frame",
+  ] : []
 }
 
 # Core public hosted zone, looked up by name so the inference/api ACM+DNS wiring
@@ -202,6 +208,10 @@ module "cognito" {
   callback_urls           = local.cognito_callback_urls
   logout_urls             = local.cognito_callback_urls
 
+  # Backstage SSO (confidential OIDC client). Empty list => no client created.
+  backstage_callback_urls = local.backstage_callback_urls
+  backstage_logout_urls   = var.backstage_hostname != "" ? ["https://${var.backstage_hostname}"] : []
+
   tags = local.common_tags
 }
 
@@ -291,6 +301,62 @@ module "storage" {
   checkpoint_retention_days = var.checkpoint_retention_days
 
   tags = local.common_tags
+}
+
+# ---------------------------------------------------------------------------
+# Backstage developer portal (IDP) — VPN-only internal portal fronted by the
+# same ingress-nginx + cert-manager path as the ArgoCD UI (see Kinetics-CD:
+# gitops/apps/backstage). This layer provides only the AWS-side dependencies:
+#   * Postgres (RDS) — Backstage's required prod database.
+#   * A Cognito app client + an OIDC client-secret in Secrets Manager (the
+#     portal's SSO; reuses the existing user pool). See the cognito module.
+# Both secrets land under `kinetics-*` names so the existing External Secrets
+# role can sync them into the cluster (no new IAM role — Backstage's Kubernetes
+# plugin authenticates via its in-cluster ServiceAccount RBAC, not AWS IAM).
+# Gated on enable_backstage so a cold bring-up (and dev) skip the RDS spend.
+# ---------------------------------------------------------------------------
+module "rds_backstage" {
+  source = "./modules/rds"
+  count  = var.enable_backstage ? 1 : 0
+
+  name               = local.name
+  vpc_id             = local.network.vpc_id
+  vpc_cidr           = local.network.vpc_cidr
+  private_subnet_ids = local.network.private_subnet_ids
+  # Backstage pods egress from the EKS nodes, so the node SG is the client.
+  allowed_security_group_ids = [module.eks.node_security_group_id]
+
+  instance_class      = var.backstage_db_instance_class
+  multi_az            = var.backstage_db_multi_az
+  deletion_protection = var.backstage_db_deletion_protection
+  # kinetics-* so ESO (scoped to secret:kinetics-*) can sync it in-cluster.
+  secret_name = "kinetics-backstage-db-${var.environment}"
+
+  tags = local.common_tags
+}
+
+# The Cognito app client's confidential secret, mirrored into Secrets Manager
+# under a kinetics-* name so ESO can sync it as part of `backstage-secrets`
+# (Backstage's OIDC auth provider needs the client secret at runtime). Only
+# created when both Backstage and Cognito are on.
+resource "aws_secretsmanager_secret" "backstage_oidc" {
+  count = var.enable_backstage && var.enable_cognito ? 1 : 0
+  # checkov:skip=CKV_AWS_149:Default aws/secretsmanager key - ESO decrypt is ViaService-scoped, no CMK plumbing.
+  # checkov:skip=CKV2_AWS_57:OIDC client secret rotates via Cognito, not a rotation lambda.
+  name        = "kinetics-backstage-oidc-${var.environment}"
+  description = "Backstage Cognito OIDC client id + secret - synced into the cluster by ESO."
+  tags        = local.common_tags
+}
+
+resource "aws_secretsmanager_secret_version" "backstage_oidc" {
+  count     = var.enable_backstage && var.enable_cognito ? 1 : 0
+  secret_id = aws_secretsmanager_secret.backstage_oidc[0].id
+  secret_string = jsonencode({
+    clientId     = one(module.cognito[*].backstage_client_id)
+    clientSecret = one(module.cognito[*].backstage_client_secret)
+    # OIDC discovery doc — the auth-backend oidc provider's metadataUrl.
+    metadataUrl = "${one(module.cognito[*].issuer)}/.well-known/openid-configuration"
+  })
 }
 
 # ---------------------------------------------------------------------------

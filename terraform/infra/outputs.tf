@@ -254,3 +254,28 @@ output "inference_api_waf_arn" {
   description = "Regional WAF ACL ARN for the public inference ALB — set as the Ingress wafv2-acl-arn annotation (null when disabled)."
   value       = var.enable_waf && var.api_domain_name != "" ? aws_wafv2_web_acl.inference_api[0].arn : null
 }
+
+# ---------------------------------------------------------------------------
+# Backstage (developer portal / IDP). The DB + OIDC secrets are consumed
+# out-of-band by the Kinetics-CD ExternalSecret (by Secrets Manager NAME), not
+# by the cluster terraform layer — so these are informational for the runbook.
+# ---------------------------------------------------------------------------
+output "backstage_db_endpoint" {
+  description = "Backstage Postgres endpoint host (null when disabled)."
+  value       = var.enable_backstage ? module.rds_backstage[0].db_endpoint : null
+}
+
+output "backstage_db_secret_name" {
+  description = "Secrets Manager name of the Backstage DB connection secret (the ESO remoteRef.key; null when disabled)."
+  value       = var.enable_backstage ? module.rds_backstage[0].secret_name : null
+}
+
+output "backstage_oidc_secret_name" {
+  description = "Secrets Manager name of the Backstage Cognito OIDC secret (client id + secret; null when Backstage or Cognito is off)."
+  value       = var.enable_backstage && var.enable_cognito ? aws_secretsmanager_secret.backstage_oidc[0].name : null
+}
+
+output "backstage_cognito_client_id" {
+  description = "Backstage Cognito OIDC app-client ID (null when Backstage or Cognito is off)."
+  value       = var.enable_backstage && var.enable_cognito ? one(module.cognito[*].backstage_client_id) : null
+}
