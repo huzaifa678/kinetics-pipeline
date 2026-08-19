@@ -1,0 +1,74 @@
+app:
+  # The VPN-only portal host (ingress-nginx + cert-manager, same path as the
+  # ArgoCD UI). BACKSTAGE_HOST = backstage.freeeasycrypto.com in prod.
+  baseUrl: https://${BACKSTAGE_HOST}
+
+backend:
+  baseUrl: https://${BACKSTAGE_HOST}
+  cors:
+    origin: https://${BACKSTAGE_HOST}
+  database:
+    client: pg
+    connection:
+      host: ${POSTGRES_HOST}
+      port: ${POSTGRES_PORT}
+      user: ${POSTGRES_USER}
+      password: ${POSTGRES_PASSWORD}
+      database: ${POSTGRES_DB}
+      ssl:
+        require: true
+        rejectUnauthorized: false
+kubernetes:
+  serviceLocatorMethod:
+    type: multiTenant
+  clusterLocatorMethods:
+    # In-cluster: Backstage reads the EKS API via its own ServiceAccount token
+    # (mounted at the standard path) + the backstage-read ClusterRole.
+    - type: 'localKubectlProxy'
+  customResources:
+    - group: 'argoproj.io'
+      apiVersion: 'v1alpha1'
+      plural: 'rollouts'
+    - group: 'argoproj.io'
+      apiVersion: 'v1alpha1'
+      plural: 'analysisruns'
+
+argocd:
+  appLocatorMethods:
+    - type: config
+      instances:
+        - name: kinetics
+          # VPN-internal ArgoCD UI (see Kinetics-CD ingress-nginx). Backstage
+          # runs in-cluster so it reaches the argocd-server Service directly.
+          url: ${ARGOCD_URL}
+          token: ${ARGOCD_AUTH_TOKEN}
+
+auth:
+  environment: production
+  providers:
+    # Cognito via the generic OIDC provider. metadataUrl is the pool's
+    # discovery doc; clientId/secret come from the backstage-oidc secret.
+    oidc:
+      production:
+        metadataUrl: ${COGNITO_METADATA_URL}
+        clientId: ${COGNITO_CLIENT_ID}
+        clientSecret: ${COGNITO_CLIENT_SECRET}
+        prompt: auto
+        signIn:
+          resolvers:
+            - resolver: emailMatchingUserEntityProfileEmail
+            - resolver: emailLocalPartMatchingUserEntityName
+
+catalog:
+  providers:
+    github:
+      # Ingest every repo in the org that carries a catalog-info.yaml.
+      kineticsOrg:
+        organization: 'huzaifa678'
+        catalogPath: '/catalog-info.yaml'
+        schedule:
+          frequency: { minutes: 30 }
+          timeout: { minutes: 3 }
+
+permission:
+  enabled: true

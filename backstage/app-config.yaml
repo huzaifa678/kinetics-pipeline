@@ -1,0 +1,78 @@
+app:
+  title: Kinetics Developer Portal
+  baseUrl: http://localhost:3000
+
+organization:
+  name: Kinetics
+
+backend:
+  baseUrl: http://localhost:7007
+  listen:
+    port: 7007
+  csp:
+    connect-src: ["'self'", 'http:', 'https:']
+  cors:
+    origin: http://localhost:3000
+    methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+    credentials: true
+  database:
+    client: better-sqlite3
+    connection: ':memory:'
+  auth:
+    keys:
+      - secret: ${BACKEND_SECRET}
+
+integrations:
+  github:
+    - host: github.com
+      # A GitHub App or PAT with repo read — synced by ESO into the backstage
+      # secret. Enables repo discovery, catalog ingestion and PR/Actions plugins.
+      token: ${GITHUB_TOKEN}
+
+# The portal's own source of truth is the catalog/ dir plus GitHub org discovery.
+catalog:
+  import:
+    entityFilename: catalog-info.yaml
+  rules:
+    - allow: [Component, System, API, Resource, Location, Group, User, Domain, Template]
+  locations:
+    # Seed entities describing THIS platform (services, systems, teams).
+    - type: file
+      target: ./catalog/all.yaml
+      rules:
+        - allow: [Component, System, API, Resource, Location, Group, User, Domain]
+
+# Argo CD plugin — reads sync/health of the Applications ArgoCD manages. The
+# instance URL + token are overlaid in prod (VPN-internal argocd host).
+argocd:
+  appLocatorMethods:
+    - type: config
+      instances:
+        - name: kinetics
+          url: ${ARGOCD_URL}
+          token: ${ARGOCD_AUTH_TOKEN}
+
+# Kubernetes plugin — surfaces live pod/Deployment/Rollout health per component.
+# In-cluster auth (the Backstage ServiceAccount token + a read ClusterRole) is
+# configured in app-config.production.yaml; empty here so local dev doesn't try.
+kubernetes:
+  serviceLocatorMethod:
+    type: multiTenant
+  clusterLocatorMethods: []
+
+techdocs:
+  builder: 'local'
+  generator:
+    runIn: 'local'
+  publisher:
+    type: 'local'
+
+auth:
+  environment: development
+  providers:
+    guest: {}
+
+scaffolder: {}
+
+permission:
+  enabled: false

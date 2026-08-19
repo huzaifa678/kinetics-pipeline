@@ -1,0 +1,135 @@
+# Seed catalog describing the Kinetics platform. This is the portal's initial
+# picture of the world; GitHub org discovery (app-config.production.yaml) layers
+# any repo-level catalog-info.yaml on top. Kept in one multi-doc file for clarity.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: kinetics-ml
+  description: Kinetics video-classification model — training, serving, delivery.
+spec:
+  owner: platform-team
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-team
+  description: Owns the AWS infra, GitOps and CI/CD for the Kinetics platform.
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: huzaifagill
+spec:
+  memberOf: [platform-team]
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: training-platform
+  description: GPU training on SageMaker HyperPod (EKS), MLflow tracking, FSx/S3.
+spec:
+  owner: platform-team
+  domain: kinetics-ml
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: inference-platform
+  description: Seldon Core v2 + self-hosted FastAPI serving, KEDA/Karpenter scaling.
+spec:
+  owner: platform-team
+  domain: kinetics-ml
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: training-job
+  description: PyTorch Kinetics trainer (HyperPodPyTorchJob).
+  annotations:
+    github.com/project-slug: huzaifa678/kinetics-pipeline
+    argocd/app-name: kinetics-training
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: training-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: inference-service
+  description: FastAPI inference edge (Argo Rollout, KEDA-autoscaled).
+  annotations:
+    github.com/project-slug: huzaifa678/kinetics-pipeline
+    argocd/app-name: kinetics-inference
+    backstage.io/kubernetes-label-selector: app.kubernetes.io/name=inference-service
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: inference-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: seldon-runtime
+  description: Seldon Core v2 MLServer runtime (A/B experiments, Kafka pipelines).
+  annotations:
+    github.com/project-slug: huzaifa678/kinetics-pipeline
+    argocd/app-name: kinetics-experiment
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: inference-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: frontend-spa
+  description: React/Vite SPA (S3 + CloudFront), Cognito-authed inference UI.
+  annotations:
+    github.com/project-slug: huzaifa678/kinetics-pipeline
+spec:
+  type: website
+  lifecycle: production
+  owner: platform-team
+  system: inference-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: backstage
+  description: This developer portal.
+  annotations:
+    github.com/project-slug: huzaifa678/kinetics-pipeline
+    backstage.io/kubernetes-label-selector: app.kubernetes.io/name=backstage
+spec:
+  type: service
+  lifecycle: production
+  owner: platform-team
+  system: kinetics-ml
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: msk-kafka
+  description: MSK (SASL/SCRAM) — Seldon pipeline transport.
+spec:
+  type: kafka-cluster
+  owner: platform-team
+  system: inference-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: backstage-postgres
+  description: RDS Postgres backing this portal.
+spec:
+  type: database
+  owner: platform-team
+  system: kinetics-ml

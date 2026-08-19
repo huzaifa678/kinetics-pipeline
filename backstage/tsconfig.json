@@ -1,0 +1,9 @@
+{
+  "extends": "@backstage/cli/config/tsconfig.json",
+  "include": ["packages/*/src", "packages/*/dev", "plugins/*/src", "plugins/*/dev"],
+  "exclude": ["node_modules"],
+  "compilerOptions": {
+    "outDir": ".",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "kinetics-backstage",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": "20 || 22"
+  },
+  "packageManager": "yarn@4.4.1",
+  "workspaces": {
+    "packages": [
+      "packages/*"
+    ]
+  },
+  "scripts": {
+    "dev": "backstage-cli repo start",
+    "start": "backstage-cli package start",
+    "build:backend": "yarn workspace backend build",
+    "build:all": "backstage-cli repo build --all",
+    "tsc": "tsc",
+    "clean": "backstage-cli repo clean",
+    "test": "backstage-cli repo test",
+    "lint": "backstage-cli repo lint"
+  },
+  "devDependencies": {
+    "@backstage/cli": "^0.28.0",
+    "typescript": "~5.4.0"
+  },
+  "prettier": "@backstage/cli/config/prettier"
+}

@@ -1,0 +1,11 @@
+# Backstage / yarn build artifacts — yarn.lock IS committed (needed by the
+# Dockerfile's --immutable install); everything below is regenerated.
+node_modules/
+packages/*/node_modules/
+packages/*/dist/
+packages/*/dist-types/
+dist-types/
+.yarn/cache/
+.yarn/install-state.gz
+*.local.yaml
+.env
