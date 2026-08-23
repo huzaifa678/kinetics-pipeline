@@ -166,10 +166,13 @@ data "aws_iam_policy_document" "tf_plan_reads" {
   # checkov:skip=CKV_AWS_108:No cross-account exfiltration path — Decrypt is scoped to this account's KMS keys and GetSecretValue to the single MSK SCRAM secret name pattern.
   # checkov:skip=CKV_AWS_111:Read-only actions (GetSecretValue/Decrypt); the plan role attaches AWS ReadOnlyAccess and can write nothing.
   statement {
-    sid       = "SecretsManagerReadForRefresh"
-    effect    = "Allow"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = ["arn:${data.aws_partition.current.partition}:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:AmazonMSK_${var.name}_scram*"]
+    sid     = "SecretsManagerReadForRefresh"
+    effect  = "Allow"
+    actions = ["secretsmanager:GetSecretValue"]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:AmazonMSK_${var.name}_scram*",
+      "arn:${data.aws_partition.current.partition}:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:kinetics-backstage-*",
+    ]
   }
   statement {
     sid       = "KmsDecryptViaSecretsManager"
