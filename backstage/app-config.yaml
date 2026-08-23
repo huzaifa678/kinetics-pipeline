@@ -41,10 +41,23 @@ catalog:
       target: ./catalog/all.yaml
       rules:
         - allow: [Component, System, API, Resource, Location, Group, User, Domain]
-    # Scaffolder templates — a separate location that allows the Template kind
-    # (the all.yaml location above deliberately does not). Populates the Create page.
+    # Scaffolder templates — separate locations that allow the Template kind
+    # (the all.yaml location above deliberately does not). Explicit paths: static
+    # file locations do NOT expand globs, so add one entry per template.
     - type: file
       target: ./catalog/templates/register-existing/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ./catalog/templates/training-job/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ./catalog/templates/inference-service/template.yaml
+      rules:
+        - allow: [Template]
+    - type: file
+      target: ./catalog/templates/seldon-experiment/template.yaml
       rules:
         - allow: [Template]
 
