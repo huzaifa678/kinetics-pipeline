@@ -24,6 +24,8 @@ kind: User
 metadata:
   name: huzaifagill
 spec:
+  profile:
+    email: huzaifagill411@gmail.com
   memberOf: [platform-team]
 ---
 apiVersion: backstage.io/v1alpha1
