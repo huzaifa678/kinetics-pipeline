@@ -68,7 +68,7 @@ metadata:
   annotations:
     github.com/project-slug: huzaifa678/kinetics-pipeline
     argocd/app-name: kinetics-inference
-    backstage.io/kubernetes-label-selector: app.kubernetes.io/name=inference-service
+    backstage.io/kubernetes-label-selector: app.kubernetes.io/name=kinetics-inference
 spec:
   type: service
   lifecycle: production
