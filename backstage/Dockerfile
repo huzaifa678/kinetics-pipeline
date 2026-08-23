@@ -35,9 +35,10 @@ RUN apt-get update && \
     /opt/techdocs/bin/pip install --no-cache-dir mkdocs-techdocs-core
 ENV PATH="/opt/techdocs/bin:${PATH}"
 
+RUN corepack enable
+
 USER node
 WORKDIR /app
-RUN corepack enable
 
 # Install prod deps against the compiled skeleton, then unpack the bundle.
 COPY --chown=node:node --from=build /app/.yarn ./.yarn
@@ -49,7 +50,6 @@ RUN tar xzf skeleton.tar.gz && rm skeleton.tar.gz && \
 COPY --chown=node:node --from=build /app/packages/backend/dist/bundle.tar.gz ./
 RUN tar xzf bundle.tar.gz && rm bundle.tar.gz
 
-# The compiled frontend, served by app-backend (resolves the `app` workspace).
 COPY --chown=node:node --from=build /app/packages/app/dist ./packages/app/dist
 
 # app-config.yaml is the base; app-config.production.yaml overlays prod.
