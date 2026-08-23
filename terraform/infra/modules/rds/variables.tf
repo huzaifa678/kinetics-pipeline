@@ -37,9 +37,9 @@ variable "username" {
 }
 
 variable "engine_version" {
-  description = "Postgres major.minor. Backstage supports PG 13+; 16.x is current."
+  description = "Postgres major.minor. Backstage supports PG 13+. Pin a minor RDS currently offers (16.4 was removed); auto_minor_version_upgrade keeps it current after create."
   type        = string
-  default     = "16.4"
+  default     = "16.10"
 }
 
 variable "instance_class" {
