@@ -26,12 +26,13 @@ resource "aws_security_group" "this" {
   }
 }
 
+
 resource "aws_vpc_security_group_ingress_rule" "postgres" {
-  for_each = toset(var.allowed_security_group_ids)
+  count = length(var.allowed_security_group_ids)
 
   security_group_id            = aws_security_group.this.id
   description                  = "Postgres 5432 from EKS nodes (Backstage pods)."
-  referenced_security_group_id = each.value
+  referenced_security_group_id = var.allowed_security_group_ids[count.index]
   from_port                    = 5432
   to_port                      = 5432
   ip_protocol                  = "tcp"
