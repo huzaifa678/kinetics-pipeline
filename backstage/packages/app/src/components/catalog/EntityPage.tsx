@@ -21,7 +21,7 @@ import {
 const overviewContent = (
   <Grid container spacing={3} alignItems="stretch">
     <Grid item md={6} xs={12}>
-      <EntityAboutCard variant="gridItem" />
+      <EntityAboutCard />
     </Grid>
     <EntitySwitch>
       <EntitySwitch.Case if={isArgocdAvailable}>
@@ -31,10 +31,10 @@ const overviewContent = (
       </EntitySwitch.Case>
     </EntitySwitch>
     <Grid item md={6} xs={12}>
-      <EntityCatalogGraphCard variant="gridItem" height={400} />
+      <EntityCatalogGraphCard height={400} />
     </Grid>
     <Grid item md={6} xs={12}>
-      <EntityHasSubcomponentsCard variant="gridItem" />
+      <EntityHasSubcomponentsCard />
     </Grid>
   </Grid>
 );
