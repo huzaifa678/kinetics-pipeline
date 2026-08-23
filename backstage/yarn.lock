@@ -11988,6 +11988,12 @@ __metadata:
   languageName: node
   linkType: hard
 
+"app@link:../app::locator=backend%40workspace%3Apackages%2Fbackend":
+  version: 0.0.0-use.local
+  resolution: "app@link:../app::locator=backend%40workspace%3Apackages%2Fbackend"
+  languageName: node
+  linkType: soft
+
 "app@workspace:packages/app":
   version: 0.0.0-use.local
   resolution: "app@workspace:packages/app"
@@ -12560,6 +12566,7 @@ __metadata:
     "@backstage/plugin-search-backend-module-techdocs": "npm:^0.4.17"
     "@backstage/plugin-techdocs-backend": "npm:^2.2.3"
     "@roadiehq/backstage-plugin-argo-cd-backend": "npm:^3.1.0"
+    app: "link:../app"
     better-sqlite3: "npm:^11.0.0"
     pg: "npm:^8.11.3"
   languageName: unknown

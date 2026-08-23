@@ -33,6 +33,7 @@
     "@backstage/plugin-search-backend-module-techdocs": "^0.4.17",
     "@backstage/plugin-techdocs-backend": "^2.2.3",
     "@roadiehq/backstage-plugin-argo-cd-backend": "^3.1.0",
+    "app": "link:../app",
     "better-sqlite3": "^11.0.0",
     "pg": "^8.11.3"
   },
