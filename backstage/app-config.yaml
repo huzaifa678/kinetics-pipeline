@@ -41,6 +41,12 @@ catalog:
       target: ./catalog/all.yaml
       rules:
         - allow: [Component, System, API, Resource, Location, Group, User, Domain]
+    # Scaffolder templates — a separate location that allows the Template kind
+    # (the all.yaml location above deliberately does not). Populates the Create page.
+    - type: file
+      target: ./catalog/templates/register-existing/template.yaml
+      rules:
+        - allow: [Template]
 
 # Argo CD plugin — reads sync/health of the Applications ArgoCD manages. The
 # instance URL + token are overlaid in prod (VPN-internal argocd host).

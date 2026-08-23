@@ -1,0 +1,37 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: register-existing
+  title: Register an Existing Component
+  description: >-
+    Import an existing repository's catalog-info.yaml into the Backstage catalog.
+    No repo is created — this registers a catalog location for a repo you already
+    have.
+  tags:
+    - catalog
+    - register
+spec:
+  owner: group:default/platform-team
+  type: service
+  parameters:
+    - title: Repository
+      required:
+        - catalogInfoUrl
+      properties:
+        catalogInfoUrl:
+          title: catalog-info.yaml URL
+          type: string
+          description: >-
+            Full URL to the catalog-info.yaml in the repo, e.g.
+            https://github.com/huzaifa678/<repo>/blob/main/catalog-info.yaml
+  steps:
+    - id: register
+      name: Register in catalog
+      action: catalog:register
+      input:
+        catalogInfoUrl: ${{ parameters.catalogInfoUrl }}
+  output:
+    links:
+      - title: View in catalog
+        icon: catalog
+        entityRef: ${{ steps.register.output.entityRef }}
