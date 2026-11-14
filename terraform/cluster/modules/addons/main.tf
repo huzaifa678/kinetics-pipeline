@@ -134,6 +134,13 @@ resource "helm_release" "argocd" {
         "server.insecure" = var.argocd_hostname != ""
       }
       cm = {
+        # Dedicated least-privilege account for the Backstage ArgoCD plugin.
+        # `apiKey` lets it hold an API token (no interactive login). RBAC below
+        # scopes it to read-only application access. Generate its token with
+        # `argocd account generate-token --account backstage` and store it in
+        # Secrets Manager kinetics-backstage-app-<env> (argocdToken), ESO-synced.
+        "accounts.backstage" = "apiKey"
+
         "resource.customizations.health.sagemaker.amazonaws.com_HyperPodPyTorchJob" = <<-EOT
           hs = {}
           if obj.status ~= nil and obj.status.conditions ~= nil then
@@ -158,6 +165,14 @@ resource "helm_release" "argocd" {
           hs.status = "Progressing"
           hs.message = "Waiting for HyperPodPyTorchJob status"
           return hs
+        EOT
+      }
+      rbac = {
+        # Least-privilege grant for the Backstage plugin account: read-only,
+        # application `get` only (no sync/delete). Admin stays built-in.
+        "policy.csv" = <<-EOT
+          p, role:backstage-readonly, applications, get, */*, allow
+          g, backstage, role:backstage-readonly
         EOT
       }
     }
